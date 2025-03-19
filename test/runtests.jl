@@ -1,4 +1,4 @@
-using DrWatson, Test
+using DrWatson, Test, ReTestItems
 @quickactivate "EFEasVFE"
 
 # Here you include files using `srcdir`
@@ -8,10 +8,8 @@ using DrWatson, Test
 println("Starting tests")
 ti = time()
 
-@testset "EFEasVFE tests" begin
-    @test 1 == 1
-end
+include("minigrid_tests.jl")
 
 ti = time() - ti
 println("\nTest took total time of:")
-println(round(ti/60, digits = 3), " minutes")
+println(round(ti, digits=3), " seconds")

@@ -63,7 +63,8 @@ To run this experiment, you need to:
 
 1. Start the Python FastAPI server:
 ```bash
-python src/environments/minigrid_environment.py
+cd src/environments
+uvicorn minigrid_environment:app --reload
 ```
 
 2. In a separate terminal, run the Julia experiment:

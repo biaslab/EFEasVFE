@@ -411,8 +411,7 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-
-
+# Manifest.toml
 Manifest.toml
 
 ## Acknowledgements

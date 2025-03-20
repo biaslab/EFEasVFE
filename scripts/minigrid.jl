@@ -8,6 +8,7 @@ using ProgressMeter
 
 ReactiveMP.sdtype(::ReactiveMP.StandaloneDistributionNode) = ReactiveMP.Stochastic()
 
+include(srcdir("meta/cachingmeta.jl"))
 include(srcdir("environments/minigrid.jl"))
 include(srcdir("models/minigrid/klcontrol.jl"))
 
@@ -114,7 +115,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, ke
                     action=previous_action,
                     orientation_observation=orientation
                 ),
-                callbacks=callbacks,
+                callbacks=(after_iteration=after_iteration_callback,),
                 iterations=n_iterations,
                 initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_door_state, p_old_key_state, p_door_location, p_key_location)
             )
@@ -138,6 +139,9 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, ke
             @show env_action, next_action
             env_state = step_environment(env_action)
             reward += env_state["reward"]
+            if env_state["reward"] > 0
+                break
+            end
             sleep(wait_time)
 
             # Update beliefs for next step
@@ -154,15 +158,15 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, ke
 end
 
 # Set up environment parameters
-grid_size = 3
-T = 12
+grid_size = 4
+T = 17
 
 # Generate tensors
-observation_tensors = generate_observation_tensor(grid_size);
-door_st_t = get_door_state_transition_tensor(grid_size);
-ori_st_t = get_orientation_transition_tensor();
-loc_st_t = get_self_transition_tensor(grid_size);
-key_st_t = get_key_state_transition_tensor(grid_size);
+observation_tensors = generate_observation_tensor(grid_size) .+ tiny;
+door_st_t = get_door_state_transition_tensor(grid_size) .+ tiny;
+ori_st_t = get_orientation_transition_tensor() .+ tiny;
+loc_st_t = get_self_transition_tensor(grid_size) .+ tiny;
+key_st_t = get_key_state_transition_tensor(grid_size) .+ tiny;
 
 # Set goal (bottom right corner)
 goal = zeros(grid_size^2) .+ tiny
@@ -176,7 +180,7 @@ callbacks = RxInferBenchmarkCallbacks()
 m_kl, s_kl = run_minigrid_agent(
     klcontrol_minigrid_agent,
     loc_st_t, ori_st_t, door_st_t, key_st_t, observation_tensors, T, goal;
-    n_episodes=10, n_iterations=30, wait_time=0.0, callbacks=callbacks
+    n_episodes=3, n_iterations=50, wait_time=0.0, callbacks=callbacks
 )
 @show m_kl, s_kl
 
@@ -230,16 +234,16 @@ for x in 1:7, y in 1:7
         Int(EMPTY)
     end
     # Create a fresh zero vector for each cell
-    obs_tensor[x, y] = zeros(5)
+    obs_tensor[x, y] = zeros(5) .+ tiny
     # Set only the corresponding index to 1.0
     obs_tensor[x, y][cell_idx] = 1.0
 end
 
-orientation = zeros(4)
+orientation = zeros(4) .+ tiny
 orientation[current_obs["direction"]+1] = 1.0
 
 # Create previous action vector
-previous_action = zeros(5)
+previous_action = zeros(5) .+ tiny
 previous_action[next_action] = 1.0
 
 p_old_location = vague(Categorical, grid_size^2)
@@ -249,7 +253,7 @@ p_door_location = vague(Categorical, grid_size^2 - 2 * grid_size)
 p_old_key_state = Categorical([1 - tiny, tiny])
 p_old_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
 
-T = 12
+T = 20
 
 # Run single inference step
 # Run inference
@@ -274,7 +278,7 @@ result = infer(
         action=previous_action,
         orientation_observation=orientation
     ),
-    callbacks=callbacks,
+    callbacks=(after_iteration=after_iteration_callback,),
     iterations=80,
     initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_door_state, p_old_key_state, p_door_location, p_key_location),
     showprogress=true,

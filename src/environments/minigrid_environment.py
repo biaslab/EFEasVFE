@@ -9,7 +9,7 @@ from typing import Dict, Any
 app = FastAPI()
 
 # Create environment
-env = gym.make("MiniGrid-DoorKey-5x5-v0", render_mode="human")
+env = gym.make("MiniGrid-DoorKey-6x6-v0", render_mode="human")
 
 # Initialize environment state
 observation, info = env.reset()

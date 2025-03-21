@@ -13,6 +13,7 @@ include(srcdir("meta/cachingmeta.jl"))
 include(srcdir("environments/minigrid.jl"))
 include(srcdir("models/minigrid/klcontrol.jl"))
 include(srcdir("utils/tucker.jl"))
+include(srcdir("utils/parafac.jl"))
 include(srcdir("rules/rules.jl"))
 
 BayesBase.mean(q_a::PointMass) = q_a.point
@@ -38,7 +39,7 @@ function get_action_space()
     return JSON.parse(String(response.body))
 end
 
-function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, key_t_tensor, observation_tensors, T, goal; n_episodes=1000, n_iterations=10, callbacks=nothing, wait_time=0.0)
+function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor, observation_tensors, T, goal; n_episodes=1000, n_iterations=10, callbacks=nothing, wait_time=0.0)
     rewards = zeros(n_episodes)
     observations = keep(Any)
 
@@ -51,8 +52,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, ke
         p_old_orientation = vague(Categorical, 4)
         p_key_location = vague(Categorical, grid_size^2 - 2 * grid_size)
         p_door_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-        p_old_key_state = Categorical([1 - tiny, tiny])
-        p_old_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
+        p_old_key_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
 
         reward = 0.0
 
@@ -104,12 +104,10 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, ke
                     p_old_orientation=p_old_orientation,
                     p_key_location=p_key_location,
                     p_door_location=p_door_location,
-                    p_old_key_state=p_old_key_state,
-                    p_old_door_state=p_old_door_state,
-                    loc_t_tensor=loc_t_tensor,
-                    ori_t_tensor=ori_t_tensor,
-                    door_t_tensor=door_t_tensor,
-                    key_t_tensor=key_t_tensor,
+                    p_old_key_door_state=p_old_key_door_state,
+                    location_transition_tensor=loc_t_tensor,
+                    orientation_transition_tensor=ori_t_tensor,
+                    key_door_transition_tensor=door_key_t_tensor,
                     observation_tensors=observation_tensors,
                     T=T - t,
                     goal=goal
@@ -121,7 +119,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, ke
                 ),
                 callbacks=(after_iteration=after_iteration_callback,),
                 iterations=n_iterations,
-                initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_door_state, p_old_key_state, p_door_location, p_key_location)
+                initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_key_door_state, p_door_location, p_key_location)
             )
 
             # Take action
@@ -140,7 +138,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, ke
             else
                 error("Invalid action")
             end
-            @show env_action, next_action
+            @show next_action, env_action
             env_state = step_environment(env_action)
             reward += env_state["reward"]
             if env_state["reward"] > 0
@@ -151,8 +149,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, ke
             # Update beliefs for next step
             p_old_location = last(result.posteriors[:current_location])
             p_old_orientation = last(result.posteriors[:current_orientation])
-            p_old_key_state = last(result.posteriors[:current_key_state])
-            p_old_door_state = last(result.posteriors[:current_door_state])
+            p_old_key_door_state = last(result.posteriors[:current_key_door_state])
             p_key_location = last(result.posteriors[:key_location])
             p_door_location = last(result.posteriors[:door_location])
         end
@@ -163,14 +160,17 @@ end
 
 # Set up environment parameters
 grid_size = 4
-T = 17
+T = 20
 
-# Load Tucker decomposed tensors
-observation_tensors = load_observation_tensors("data/tucker_decomposed_tensors/grid_size$(grid_size)/");
-door_transition_tensor = load_tucker_tensor("data/tucker_decomposed_tensors/grid_size$(grid_size)/door_transition_tensor/");
+# Load Parafac decomposed tensors
+observation_tensors = load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/");
+door_key_transition_tensor = get_key_door_state_transition_tensor(grid_size);
 orientation_transition_tensor = get_orientation_transition_tensor();
-location_transition_tensor = load_tucker_tensor("data/tucker_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor/");
-key_transition_tensor = load_tucker_tensor("data/tucker_decomposed_tensors/grid_size$(grid_size)/key_transition_tensor/");
+location_transition_tensor = get_self_transition_tensor(grid_size);
+
+# door_key_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor");
+# orientation_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/orientation_transition_tensor.npy");
+# location_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor");
 
 # Generate other tensors
 # door_st_t = get_door_state_transition_tensor(grid_size) .+ tiny;
@@ -189,8 +189,8 @@ callbacks = RxInferBenchmarkCallbacks()
 # Run KL control agent
 m_kl, s_kl = run_minigrid_agent(
     klcontrol_minigrid_agent,
-    location_transition_tensor, orientation_transition_tensor, door_transition_tensor, key_transition_tensor, observation_tensors, T, goal;
-    n_episodes=3, n_iterations=100, wait_time=0.0, callbacks=callbacks
+    location_transition_tensor, orientation_transition_tensor, door_key_transition_tensor, observation_tensors, T, goal;
+    n_episodes=3, n_iterations=50, wait_time=0.0, callbacks=callbacks
 )
 @show m_kl, s_kl
 
@@ -260,8 +260,7 @@ p_old_location = vague(Categorical, grid_size^2)
 p_old_orientation = vague(Categorical, 4)
 p_key_location = vague(Categorical, grid_size^2 - 2 * grid_size)
 p_door_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-p_old_key_state = Categorical([1 - tiny, tiny])
-p_old_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
+p_old_key_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
 
 T = 20
 
@@ -273,12 +272,10 @@ result = infer(
         p_old_orientation=p_old_orientation,
         p_key_location=p_key_location,
         p_door_location=p_door_location,
-        p_old_key_state=p_old_key_state,
-        p_old_door_state=p_old_door_state,
-        loc_t_tensor=location_transition_tensor,
-        ori_t_tensor=orientation_transition_tensor,
-        door_t_tensor=door_transition_tensor,
-        key_t_tensor=key_transition_tensor,
+        p_old_key_door_state=p_old_key_door_state,
+        location_transition_tensor=location_transition_tensor,
+        orientation_transition_tensor=orientation_transition_tensor,
+        key_door_transition_tensor=door_key_transition_tensor,
         observation_tensors=observation_tensors,
         T=T,
         goal=goal
@@ -288,9 +285,9 @@ result = infer(
         action=previous_action,
         orientation_observation=orientation
     ),
-    callbacks=callbacks,
-    iterations=50,
-    initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_door_state, p_old_key_state, p_door_location, p_key_location),
+    callbacks=(after_iteration=after_iteration_callback,),
+    iterations=100,
+    initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_key_door_state, p_door_location, p_key_location),
     showprogress=true,
     free_energy=false
 )
@@ -324,16 +321,22 @@ display(fig)
 m_T1 = vague(Categorical, 4)
 m_T2 = p_key_location
 m_T3 = p_door_location
-m_T4 = p_old_key_state
-m_T5 = p_old_door_state
-q_out = PointMass(obs_tensor[1, 1])
-B = generate_observation_tensor(7);
-q_a_ts = PointMass(B[1, 1, :, :, :, :, :, :, :]);
-q_a_tucker = PointMass(observation_tensors[1, 1]);
+m_T4 = p_old_key_door_state
 
-@benchmark @call_rule DiscreteTransition(:in, Marginalisation) (q_out=$q_out, m_T1=$m_T1, m_T2=$m_T2, m_T3=$m_T3, m_T4=$m_T4, m_T5=$m_T5, q_a=$q_a_ts)
-@benchmark @call_rule DiscreteTransition(:in, Marginalisation) (q_out=$q_out, m_T1=$m_T1, m_T2=$m_T2, m_T3=$m_T3, m_T4=$m_T4, m_T5=$m_T5, q_a=$q_a_tucker)
+q_out = PointMass(obs_tensor[5, 7])
+B = generate_observation_tensor(4);
+q_a_ts = PointMass(B[5, 7, :, :, :, :, :, :]);
+q_a_tucker = PointMass(observation_tensors[5, 7]);
+
+@benchmark @call_rule DiscreteTransition(:in, Marginalisation) (q_out=$q_out, m_T1=$m_T1, m_T2=$m_T2, m_T3=$m_T3, m_T4=$m_T4, q_a=$q_a_ts)
+@benchmark @call_rule DiscreteTransition(:in, Marginalisation) (q_out=$q_out, m_T1=$m_T1, m_T2=$m_T2, m_T3=$m_T3, m_T4=$m_T4, q_a=$q_a_tucker)
 
 
-@call_rule DiscreteTransition(:in, Marginalisation) (q_out=q_out, m_T1=m_T1, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, m_T5=m_T5, q_a=q_a_ts)
-@call_rule DiscreteTransition(:in, Marginalisation) (q_out=q_out, m_T1=m_T1, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, m_T5=m_T5, q_a=q_a_tucker)
+p1 = @call_rule DiscreteTransition(:in, Marginalisation) (q_out=q_out, m_T1=m_T1, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, q_a=q_a_ts)
+p2 = @call_rule DiscreteTransition(:in, Marginalisation) (q_out=q_out, m_T1=m_T1, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, q_a=q_a_tucker)
+
+probvec(p1) .- probvec(p2)
+
+
+
+

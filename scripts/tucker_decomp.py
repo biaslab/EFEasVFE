@@ -5,23 +5,105 @@ import os
 from pathlib import Path
 import scipy
 
+def calculate_parameter_count(shape, ranks):
+    """Calculate the number of parameters in the Tucker decomposition."""
+    # Core tensor parameters
+    core_params = np.prod(ranks)
+    # Factor matrix parameters
+    factor_params = sum(shape[i] * ranks[i] for i in range(len(shape)))
+    return core_params + factor_params
+
+def calculate_reconstruction_error(tensor, core, factors):
+    """Calculate reconstruction error and relative error."""
+    reconstructed = tl.tucker_to_tensor((core, factors))
+    mse = np.mean((tensor - reconstructed) ** 2)
+    rmse = np.sqrt(mse)
+    relative_error = rmse / np.sqrt(np.mean(tensor ** 2))
+    return rmse, relative_error
+
+def find_optimal_ranks(tensor, max_rank=12):
+    """Find ranks that give the best reconstruction quality."""
+    shape = tensor.shape
+    best_ranks = None
+    best_error = float('inf')
+    
+    # Start with minimum ranks
+    current_ranks = [1] * len(shape)  # Start with rank 2 for better initial approximation
+    
+    while True:
+        try:
+            core, factors = non_negative_tucker(tensor, rank=current_ranks)
+            rmse, relative_error = calculate_reconstruction_error(tensor, core, factors)
+            
+            # Update best if this is better
+            if relative_error < best_error:
+                best_ranks = current_ranks.copy()
+                best_error = relative_error
+            
+            # Try increasing each rank
+            improved = False
+            for i in range(len(shape)):
+                if current_ranks[i] >= min(max_rank, shape[i]):
+                    continue
+                    
+                test_ranks = current_ranks.copy()
+                test_ranks[i] += 1
+                
+                core, factors = non_negative_tucker(tensor, rank=test_ranks)
+                rmse, relative_error = calculate_reconstruction_error(tensor, core, factors)
+                
+                if relative_error < best_error:
+                    current_ranks = test_ranks
+                    improved = True
+                    break
+            
+            if not improved:
+                break
+                
+        except Exception as e:
+            print(f"Warning: Error during decomposition with ranks {current_ranks}: {str(e)}")
+            # If we have a valid best_ranks, use that
+            if best_ranks is not None:
+                return best_ranks, best_error
+            # Otherwise, try with slightly larger ranks
+            current_ranks = [min(r + 1, max_rank) for r in current_ranks]
+            if all(r >= max_rank for r in current_ranks):
+                # If we've hit max_rank everywhere, return the last valid ranks
+                return current_ranks, float('inf')
+    
+    # Ensure we always return valid ranks
+    if best_ranks is None:
+        best_ranks = current_ranks
+    
+    return best_ranks, best_error
+
 def decompose_tensor(tensor, output_dir, tensor_name):
     """Decompose a single tensor and save its components."""
-    # Get tensor shape to determine appropriate ranks
-    shape = tensor.shape
-    # Use min(6, shape[i]) for each dimension to ensure rank doesn't exceed dimension size
-    ranks = [min(6, shape[i]) for i in range(len(shape))]
-    print(f"Tensor shape: {shape}, Using ranks: {ranks}")
+    print(f"Finding optimal ranks for {tensor_name}...")
+    ranks, relative_error = find_optimal_ranks(tensor)
     
-    # Perform non-negative Tucker decomposition
+    # Perform final decomposition with optimal ranks
     core, factors = non_negative_tucker(tensor, rank=ranks)
+    rmse, final_error = calculate_reconstruction_error(tensor, core, factors)
+    
+    print(f"Tensor shape: {tensor.shape}")
+    print(f"Optimal ranks: {ranks}")
+    print(f"RMSE: {rmse:.6f}")
+    print(f"Relative error: {final_error:.4%}")
     
     # Save results
-    # Save core tensor
     np.save(output_dir / "core.npy", core)
-    # Save each factor matrix separately
     for i, factor in enumerate(factors):
         np.save(output_dir / f"factor_{i}.npy", factor)
+    
+    # Save metadata
+    metadata = {
+        'shape': tensor.shape,
+        'ranks': ranks,
+        'rmse': float(rmse),
+        'relative_error': float(final_error)
+    }
+    np.save(output_dir / "metadata.npy", metadata)
     
     print(f"Saved decomposition for {tensor_name}")
 

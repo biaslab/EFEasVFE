@@ -47,7 +47,7 @@ end
 Load all observation tensors from the decomposed directory structure.
 Returns a matrix of TuckerTensor objects.
 """
-function load_observation_tensors(base_dir::String)
+function load_tucker_observation_tensors(base_dir::String)
     tensors = Matrix{TuckerTensor}(undef, 7, 7)
 
     for x in 1:7, y in 1:7

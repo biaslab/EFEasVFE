@@ -174,50 +174,49 @@
     end
 
     @testset "Observation Tensor" begin
-        n = 4  # 4×4 grid
-        B = generate_observation_tensor(n)
+        for n in 4:7
+            B = generate_observation_tensor(n)
 
-        # Test tensor dimensions
-        @test size(B) == (7, 7, 5, n^2, 4, n^2 - 2n, n^2 - 2n, 2, 3)
+            # Test tensor dimensions
+            @test size(B) == (7, 7, 5, n^2, 4, n^2 - 2n, n^2 - 2n, 3)
 
-        # Test that agent is always visible at (4, 7)
-        for state in 1:n^2, orient in 1:4, key in 1:(n^2-2n), door in 1:(n^2-2n)
-            if door < 5 && key > 4 # Door and key cannot be in the same column
-                continue
-            elseif 5 ≤ state ≤ 8 && door < 5 && state - door ≠ 4 # user cannot be in a wall in the column with the door
-                continue
-            elseif 9 ≤ state ≤ 12 && door > 4 && state - door ≠ 4 # user cannot be in a wall in the column with the door
-                continue
-            elseif state - key == 0 # Should check what happens if key is in the same cell with the user
-                continue
-            elseif state - door == 4 # Should check what happens if door is in the same cell with the user
-                continue
-            else
-                obs = get_observation(B, state, orient, key, door, 1, 1)
-                if !(obs[4, 7, Int(EMPTY)] == 1.0)
-                    @show state, orient, key, door
+            # Test that agent is always visible at (4, 7)
+            for state in 1:n^2, orient in 1:4, key in 1:(n^2-2n), door in 1:(n^2-2n)
+                door_column = ((door - 1) ÷ n) + 1
+                key_column = ((key - 1) ÷ n)
+                agent_column = ((state - 1) ÷ n)
+                if door_column == key_column # Door and key cannot be in the same column
+                    continue
+                elseif door_column == agent_column && state - door ≠ n # user cannot be in a wall in the column with the door
+                    continue
+                elseif state - key == 0 # Should check what happens if key is in the same cell with the user
+                    continue
+                elseif state - door == n # Should check what happens if door is in the same cell with the user
+                    continue
+                else
+                    obs = get_observation(B, state, orient, key, door, 1, 1)
+                    @test obs[4, 7, Int(EMPTY)] == 1.0
                 end
-                @test obs[4, 7, Int(EMPTY)] == 1.0
             end
+
+            # Test that all observations are one-hot encoded
+            for i in 1:7, j in 1:7
+                @test sum(B[i, j, :, 1, 1, 1, 1, 1, 1]) == 1.0
+            end
+
+            # Test wall occlusion
+            # Choose a state where we know walls should block view
+            agent_state = 3
+            obs = get_observation(B, agent_state, Int(RIGHT), 1, 1, 1, 1)
+            # Cells behind walls should be INVISIBLE
+            @test obs[4, 6, Int(WALL)] == 1.0
+            @test obs[4, 5, Int(INVISIBLE)] == 1.0
+
+            # Test that the key will be visible at (4, 6) and the door will be visible at (4, 5)
+            obs = get_observation(B, agent_state, Int(RIGHT), 3 + n, 3 + n, 1, 1)
+            @test obs[4, 6, Int(KEY)] == 1.0
+            @test obs[4, 5, Int(DOOR)] == 1.0
         end
-
-        # Test that all observations are one-hot encoded
-        for i in 1:7, j in 1:7
-            @test sum(B[i, j, :, 1, 1, 1, 1, 1, 1]) == 1.0
-        end
-
-        # Test wall occlusion
-        # Choose a state where we know walls should block view
-        agent_state = 3
-        obs = get_observation(B, agent_state, Int(RIGHT), 1, 1, 1, 1)
-        # Cells behind walls should be INVISIBLE
-        @test obs[4, 6, Int(WALL)] == 1.0
-        @test obs[4, 5, Int(INVISIBLE)] == 1.0
-
-        # Test that the key will be visible at (4, 6) and the door will be visible at (4, 5)
-        obs = get_observation(B, agent_state, Int(RIGHT), 7, 7, 1, 1)
-        @test obs[4, 6, Int(KEY)] == 1.0
-        @test obs[4, 5, Int(DOOR)] == 1.0
     end
 
     @testset "Wall Set Creation" begin
@@ -268,7 +267,7 @@
     end
 
     @testset "get_fov" begin
-        fov = get_fov(1, 4, Int(RIGHT), 1, 2, 3, 2, 0, 1, 4)
+        fov = get_fov(1, 4, Int(RIGHT), 1, 2, 3, 2, 1, 4)
         @test fov == [
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) # Column 3 to the left is completely invisible
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) # Column 2 to the left is completely invisible
@@ -279,7 +278,7 @@
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(WALL) Int(EMPTY) Int(EMPTY) # Column has empty cells and a wall
         ]
 
-        fov = get_fov(2, 4, Int(DOWN), 1, 2, 3, 2, 0, 1, 4)
+        fov = get_fov(2, 4, Int(DOWN), 1, 2, 3, 2, 1, 4)
         @test fov == [
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) # Column 3 to the right is completely invisible
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) # Column 2 to the right is completely invisible
@@ -289,7 +288,7 @@
             Int(INVISIBLE) Int(INVISIBLE) Int(WALL) Int(WALL) Int(WALL) Int(WALL) Int(WALL) # Column 2 to the left has some walls
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) # Column 3 to the left is completely invisible
         ]
-        fov = get_fov(2, 4, Int(DOWN), 1, 2, 3, 2, 1, 1, 4)
+        fov = get_fov(2, 4, Int(DOWN), 1, 2, 3, 2, 2, 4)
         @test fov == [
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) # Column 3 to the right is completely invisible
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) # Column 2 to the right is completely invisible
@@ -301,87 +300,96 @@
         ]
     end
     @testset "Movement transition tensor" begin
-        n = 4
-        T = get_self_transition_tensor(n)
-        @test size(T) == (n^2, n^2, 4, n^2 - 2n, n^2 - 2n, 2, 3, 5)
-        for old_state in 1:n^2, orientation in 1:4, key_pos in 1:(n^2-2n), door_pos in 1:(n^2-2n), key_state in 1:2, door_state in 1:3, action in 1:5
-            if action != 3
-                @test T[old_state, old_state, orientation, key_pos, door_pos, key_state, door_state, action] == 1.0
+        for n in 4:7
+            T = get_self_transition_tensor(n)
+            @test size(T) == (n^2, n^2, 4, n^2 - 2n, n^2 - 2n, 3, 5)
+            for old_state in 1:n^2, orientation in 1:4, key_pos in 1:(n^2-2n), door_pos in 1:(n^2-2n), door_key_state in 1:3, action in 1:5
+                if action != 3
+                    @test T[old_state, old_state, orientation, key_pos, door_pos, door_key_state, action] == 1.0
+                end
             end
-        end
-        for key_state in 1:2, door_state in 1:3
-            @test T[5, 1, Int(RIGHT), 2, 7, key_state, door_state, 3] == 1.0
-        end
-        for door_state in 5:8
-            for old_state in 1:n
-                @test T[old_state, old_state, Int(RIGHT), old_state+4, door_state, 1, 1, 3] == 1.0
+            for door_key_state in 1:3
+                @test T[n+1, 1, Int(RIGHT), 2, n+1, door_key_state, 3] == 1.0
+            end
+            for door_loc in (n+1):(n^2-2n)
+                for old_state in 1:(n^2-3n)
+                    @test T[old_state, old_state, Int(RIGHT), old_state+n, door_loc, 1, 3] == 1.0
+                end
             end
         end
     end
 
     @testset "Door state transition tensor" begin
-        n = 4
-        T = get_door_state_transition_tensor(n)
-        @test size(T) == (3, 3, n^2, 4, n^2 - 2n, 2, 5)
+        for n in 4:7
+            T = get_door_key_state_transition_tensor(n)
+            @test size(T) == (3, 3, n^2, 4, n^2 - 2n, n^2 - 2n, 5)
 
-        # Test that door state remains unchanged for actions other than toggle (5)
-        for door_state in 1:3, agent_state in 1:n^2, orientation in 1:4, door_pos in 1:(n^2-2n), key_state in 1:2, action in 1:4
-            @test T[door_state, door_state, agent_state, orientation, door_pos, key_state, action] == 1.0
+            # Test that door state remains unchanged for actions other than toggle (5) or pickup (4)
+            for door_key_state in 1:3, agent_state in 1:n^2, orientation in 1:4, key_pos in 1:(n^2-2n), door_pos in 1:(n^2-2n), action in 1:3
+
+                @test T[door_key_state, door_key_state, agent_state, orientation, key_pos, door_pos, action] == 1.0
+
+            end
+
+            # Test door opening when agent is in front of door with key
+            # Agent at (2,1) facing right, door at (3,1)
+            agent_state = coords_to_state(1, 1, n)
+            door_pos = 1  # Door at (2,1) in door position coordinates
+
+            for key_pos in 1:(n^2-3n)
+                # Door should open when agent has key, is in front of door, and uses toggle action
+                @test T[3, 2, agent_state, Int(RIGHT), key_pos, door_pos, 5] == 1.0
+
+                # Door should not open when agent doesn't have key
+                @test T[1, 1, agent_state, Int(RIGHT), key_pos, door_pos, 5] == 1.0
+
+                # Door should not open when agent is not facing door
+                @test T[1, 1, agent_state, Int(LEFT), key_pos, door_pos, 5] == 1.0
+                @test T[1, 1, agent_state, Int(UP), key_pos, door_pos, 5] == 1.0
+                @test T[1, 1, agent_state, Int(DOWN), key_pos, door_pos, 5] == 1.0
+
+                # Door should not open when agent is not in front of door
+                agent_state_far = coords_to_state(4, 4, n)
+                @test T[1, 1, agent_state_far, Int(RIGHT), key_pos, door_pos, 5] == 1.0
+
+                # Door state should remain unchanged if already open
+                @test T[3, 3, agent_state, Int(RIGHT), key_pos, door_pos, 5] == 1.0
+            end
         end
-
-        # Test door opening when agent is in front of door with key
-        # Agent at (2,1) facing right, door at (3,1)
-        agent_state = coords_to_state(1, 1, n)
-        door_pos = 1  # Door at (2,1) in door position coordinates
-
-        # Door should open when agent has key, is in front of door, and uses toggle action
-        @test T[3, 1, agent_state, Int(RIGHT), door_pos, 2, 5] == 1.0
-
-        # Door should not open when agent doesn't have key
-        @test T[1, 1, agent_state, Int(RIGHT), door_pos, 1, 5] == 1.0
-
-        # Door should not open when agent is not facing door
-        @test T[1, 1, agent_state, Int(LEFT), door_pos, 2, 5] == 1.0
-        @test T[1, 1, agent_state, Int(UP), door_pos, 2, 5] == 1.0
-        @test T[1, 1, agent_state, Int(DOWN), door_pos, 2, 5] == 1.0
-
-        # Door should not open when agent is not in front of door
-        agent_state_far = coords_to_state(4, 4, n)
-        @test T[1, 1, agent_state_far, Int(RIGHT), door_pos, 2, 5] == 1.0
-
-        # Door state should remain unchanged if already open
-        @test T[3, 3, agent_state, Int(RIGHT), door_pos, 2, 5] == 1.0
     end
 
     @testset "Key state transition tensor" begin
-        n = 4
-        T = get_key_state_transition_tensor(n)
-        @test size(T) == (2, 2, n^2, 4, n^2 - 2n, 5)
+        for n in 4:7
+            T = get_door_key_state_transition_tensor(n)
+            @test size(T) == (3, 3, n^2, 4, n^2 - 2n, n^2 - 2n, 5)
 
-        # Test that key state remains unchanged for actions other than pickup (4)
-        for key_state in 1:2, agent_state in 1:n^2, orientation in 1:4, key_pos in 1:(n^2-2n), action in [1, 2, 3, 5]
-            @test T[key_state, key_state, agent_state, orientation, key_pos, action] == 1.0
+            # Test that key state remains unchanged for actions other than pickup (4)
+            for door_key_state in 1:3, agent_state in 1:n^2, orientation in 1:4, key_pos in 1:(n^2-2n), door_pos in 1:(n^2-2n), action in 1:3
+                @test T[door_key_state, door_key_state, agent_state, orientation, key_pos, door_pos, action] == 1.0
+            end
+
+            # Test key pickup when agent is in front of key
+            # Agent at (1,1) facing right, key at (2,1)
+            agent_state = coords_to_state(1, 1, n)
+            key_pos = n + 1  # Key at (2,1) in key position coordinates
+
+            for door_pos in n:(n^2-2n)
+                # Key should be picked up when agent is in front of key and uses pickup action
+                @test T[2, 1, agent_state, Int(RIGHT), key_pos, door_pos, 4] == 1.0
+
+                # Key should not be picked up when agent is not facing key
+                @test T[1, 1, agent_state, Int(LEFT), key_pos, door_pos, 4] == 1.0
+                @test T[1, 1, agent_state, Int(UP), key_pos, door_pos, 4] == 1.0
+                @test T[1, 1, agent_state, Int(DOWN), key_pos, door_pos, 4] == 1.0
+
+                # Key should not be picked up when agent is not in front of key
+                agent_state_far = coords_to_state(3, 3, n)
+                @test T[1, 1, agent_state_far, Int(RIGHT), key_pos, door_pos, 4] == 1.0
+
+                # Key state should remain unchanged if already picked up
+                @test T[2, 2, agent_state, Int(RIGHT), key_pos, door_pos, 4] == 1.0
+            end
         end
-
-        # Test key pickup when agent is in front of key
-        # Agent at (1,1) facing right, key at (2,1)
-        agent_state = coords_to_state(1, 1, n)
-        key_pos = 5  # Key at (2,1) in key position coordinates
-
-        # Key should be picked up when agent is in front of key and uses pickup action
-        @test T[2, 1, agent_state, Int(RIGHT), key_pos, 4] == 1.0
-
-        # Key should not be picked up when agent is not facing key
-        @test T[1, 1, agent_state, Int(LEFT), key_pos, 4] == 1.0
-        @test T[1, 1, agent_state, Int(UP), key_pos, 4] == 1.0
-        @test T[1, 1, agent_state, Int(DOWN), key_pos, 4] == 1.0
-
-        # Key should not be picked up when agent is not in front of key
-        agent_state_far = coords_to_state(3, 3, n)
-        @test T[1, 1, agent_state_far, Int(RIGHT), key_pos, 4] == 1.0
-
-        # Key state should remain unchanged if already picked up
-        @test T[2, 2, agent_state, Int(RIGHT), key_pos, 4] == 1.0
     end
 end
 

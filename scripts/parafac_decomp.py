@@ -17,9 +17,12 @@ def setup_logging(verbose: bool = False) -> None:
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
-def get_device() -> torch.device:
-    """Get the appropriate device (CUDA if available, CPU otherwise)."""
-    if torch.cuda.is_available():
+def get_device(force_cpu: bool = False) -> torch.device:
+    """Get the appropriate device (CUDA if available and not forced to CPU, CPU otherwise)."""
+    if force_cpu:
+        logging.info("Forcing CPU usage")
+        return torch.device('cpu')
+    elif torch.cuda.is_available():
         logging.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
         return torch.device('cuda')
     else:
@@ -60,21 +63,16 @@ def find_optimal_rank(
     best_misclassification = float('inf')
     best_f1_error = float('inf')
     
-    # Convert tensor to appropriate device if using CUDA
+    # Convert tensor to appropriate device and dtype if using CUDA
     if device.type == 'cuda':
-        tensor = tensor.to(device)
+        tensor = tensor.to(device=device, dtype=torch.float32)
     
     # Generate exponentially spaced ranks
     if max_rank <= 10:
         ranks = list(range(1, max_rank + 1))
     else:
-        # Use exponential spacing: 1, 10, 100, 1000 (or similar)
-        ranks = [1]
-        current = 10
-        while current < max_rank:
-            ranks.append(current)
-            current *= 10
-        ranks.append(max_rank)
+        # Use specific ranks: 1, 20, 200, 1000
+        ranks = [1, 20, 200, 500, 1000, 1500]
     
     if verbose:
         logging.info(f"Testing ranks: {ranks}")
@@ -101,6 +99,12 @@ def find_optimal_rank(
                 if verbose:
                     logging.info("Perfect reconstruction achieved, stopping.")
                 break
+            
+            # Clean up GPU memory
+            if device.type == 'cuda':
+                del weights
+                del factors
+                torch.cuda.empty_cache()
                 
         except Exception as e:
             logging.warning(f"Error during decomposition with rank {current_rank}: {str(e)}")
@@ -117,29 +121,27 @@ def decompose_tensor(
     output_dir: Path,
     tensor_name: str,
     rank: int = 1000,
-    verbose: bool = False
+    verbose: bool = False,
+    device: torch.device = None
 ) -> Dict[str, Any]:
     """Decompose a single tensor and save its components."""
     logging.info(f"Processing tensor: {tensor_name}")
     
-    # Get appropriate device
-    device = get_device()
-    
-    # Check if tensor is binary
-    unique_values = torch.unique(tensor)
-    is_binary = len(unique_values) == 2 and set(unique_values.cpu().numpy()) == {0, 1}
-    
-    if not is_binary:
-        logging.warning("Tensor is not binary, results may be unreliable")
-    
     # Set appropriate backend
     tl.set_backend('pytorch')
+    
+    # Move tensor to appropriate device and convert to 32 bit if using CUDA
+    if device.type == 'cuda':
+        tensor = tensor.to(device=device, dtype=torch.float32)
     
     # Perform decomposition
     weights, factors = parafac(tensor, rank=rank, 
                               init='random',
                               tol=1e-6,
-                              n_iter_max=100)
+                              n_iter_max=150)
+    
+    if verbose:
+        logging.debug(f"Tensor decomposition complete")
     
     final_misclassification, final_f1_error = calculate_reconstruction_error(tensor, weights, factors, device)
     
@@ -148,9 +150,15 @@ def decompose_tensor(
     logging.info(f"Misclassification rate: {final_misclassification:.4%}")
     logging.info(f"F1 error: {final_f1_error:.4%}")
     
-    # Convert results to numpy for saving
-    weights_np = weights.cpu().numpy()
-    factors_np = [f.cpu().numpy() for f in factors]
+    # Convert results to numpy for saving (convert back to float32 for stability)
+    weights_np = weights.cpu().float().numpy()
+    factors_np = [f.cpu().float().numpy() for f in factors]
+    
+    # Clean up GPU memory
+    if device.type == 'cuda':
+        del weights
+        del factors
+        torch.cuda.empty_cache()
     
     # Save results
     np.save(output_dir / "weights.npy", weights_np)
@@ -163,7 +171,6 @@ def decompose_tensor(
         'rank': rank,
         'misclassification': float(final_misclassification),
         'f1_error': float(final_f1_error),
-        'is_binary': is_binary,
         'device_used': device.type
     }
     np.save(output_dir / "metadata.npy", metadata)
@@ -176,12 +183,13 @@ def main():
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     parser.add_argument('--rank', type=int, default=1000, help='Rank for PARAFAC decomposition')
     parser.add_argument('--find-rank', action='store_true', help='Find optimal rank instead of using fixed rank')
+    parser.add_argument('--cpu', action='store_true', help='Force CPU usage even if CUDA is available')
     args = parser.parse_args()
     
     setup_logging(args.verbose)
     
     # Get appropriate device
-    device = get_device()
+    device = get_device(force_cpu=args.cpu)
     
     # Set the backend to PyTorch
     tl.set_backend('pytorch')
@@ -230,7 +238,7 @@ def main():
                 rank = args.rank
             
             # Decompose and save
-            decompose_tensor(tensor, tensor_dir, tensor_file.name, rank=rank, verbose=args.verbose)
+            decompose_tensor(tensor, tensor_dir, tensor_file.name, rank=rank, verbose=args.verbose, device=device)
             
         logging.info(f"Completed processing {grid_dir.name}")
 

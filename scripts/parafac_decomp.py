@@ -3,104 +3,158 @@ import tensorly as tl
 from tensorly.decomposition import parafac
 import os
 from pathlib import Path
-import scipy
+import torch
+import argparse
+from tqdm import tqdm
+import logging
+from typing import Optional, Tuple, List, Dict, Any
 
-def calculate_parameter_count(shape, rank):
+def setup_logging(verbose: bool = False) -> None:
+    """Set up logging configuration."""
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
+def get_device() -> torch.device:
+    """Get the appropriate device (CUDA if available, CPU otherwise)."""
+    if torch.cuda.is_available():
+        logging.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
+        return torch.device('cuda')
+    else:
+        logging.warning("CUDA not available, using CPU")
+        return torch.device('cpu')
+
+def calculate_parameter_count(shape: Tuple[int, ...], rank: int) -> int:
     """Calculate the number of parameters in the PARAFAC decomposition."""
-    # Each factor matrix has shape (dimension_size, rank)
-    factor_params = sum(shape[i] * rank for i in range(len(shape)))
-    return factor_params
+    return sum(shape[i] * rank for i in range(len(shape)))
 
-def calculate_reconstruction_error(tensor, weights, factors):
+def calculate_reconstruction_error(
+    tensor: torch.Tensor,
+    weights: torch.Tensor,
+    factors: List[torch.Tensor],
+    device: torch.device
+) -> Tuple[float, float]:
     """Calculate error metrics appropriate for binary tensors."""
     reconstructed = tl.cp_to_tensor((weights, factors))
-    # Threshold the reconstruction to binary
-    binary_reconstruction = (reconstructed > 0.5).astype(tensor.dtype)
-    # Calculate misclassification rate
-    misclassification = np.mean(binary_reconstruction != tensor)
-    # Calculate F1 score
-    true_positives = np.sum((binary_reconstruction == 1) & (tensor == 1))
-    precision = true_positives / (np.sum(binary_reconstruction == 1) + 1e-10)
-    recall = true_positives / (np.sum(tensor == 1) + 1e-10)
+    binary_reconstruction = (reconstructed > 0.5).to(tensor.dtype)
+    misclassification = torch.mean((binary_reconstruction != tensor).float())
+    
+    true_positives = torch.sum((binary_reconstruction == 1) & (tensor == 1))
+    precision = true_positives / (torch.sum(binary_reconstruction == 1) + 1e-10)
+    recall = true_positives / (torch.sum(tensor == 1) + 1e-10)
     f1_score = 2 * (precision * recall) / (precision + recall + 1e-10)
-    return misclassification, 1 - f1_score
+    
+    return misclassification.item(), 1 - f1_score.item()
 
-def find_optimal_rank(tensor, max_rank=20):
-    """Find rank that gives the best reconstruction quality."""
+def find_optimal_rank(
+    tensor: torch.Tensor,
+    max_rank: int = 20,
+    device: Optional[torch.device] = None,
+    verbose: bool = False
+) -> Tuple[int, float, float]:
+    """Find rank that gives the best reconstruction quality using exponential interpolation."""
     shape = tensor.shape
     best_rank = None
     best_misclassification = float('inf')
     best_f1_error = float('inf')
     
-    # Start with minimum rank
-    current_rank = 1
+    # Convert tensor to appropriate device if using CUDA
+    if device.type == 'cuda':
+        tensor = tensor.to(device)
     
-    while current_rank <= max_rank:
+    # Generate exponentially spaced ranks
+    if max_rank <= 10:
+        ranks = list(range(1, max_rank + 1))
+    else:
+        # Use exponential spacing: 1, 10, 100, 1000 (or similar)
+        ranks = [1]
+        current = 10
+        while current < max_rank:
+            ranks.append(current)
+            current *= 10
+        ranks.append(max_rank)
+    
+    if verbose:
+        logging.info(f"Testing ranks: {ranks}")
+    
+    pbar = tqdm(ranks, desc="Finding optimal rank", disable=not verbose)
+    
+    for current_rank in pbar:
         try:
-            # Add memory-efficient options
             weights, factors = parafac(tensor, rank=current_rank, 
-                                    init='random',  # Use random initialization
-                                    tol=1e-6,      # Slightly relaxed tolerance
-                                    n_iter_max=1000)  # Limit iterations
+                                    init='random',
+                                    tol=1e-6,
+                                    n_iter_max=100)
             
-            misclassification, f1_error = calculate_reconstruction_error(tensor, weights, factors)
+            misclassification, f1_error = calculate_reconstruction_error(tensor, weights, factors, device)
             
-            # Update best if this is better
             if misclassification < best_misclassification:
                 best_rank = current_rank
                 best_misclassification = misclassification
                 best_f1_error = f1_error
-                print(f"Found better rank {current_rank}: misclassification={misclassification:.4f}, F1_error={f1_error:.4f}")
+                if verbose:
+                    logging.debug(f"Found better rank {current_rank}: misclassification={misclassification:.4f}, F1_error={f1_error:.4f}")
             
-            # If we have perfect reconstruction, stop
             if misclassification == 0 and f1_error == 0:
-                print("Perfect reconstruction achieved, stopping.")
+                if verbose:
+                    logging.info("Perfect reconstruction achieved, stopping.")
                 break
-            
-            current_rank += 1
                 
         except Exception as e:
-            print(f"Warning: Error during decomposition with rank {current_rank}: {str(e)}")
-            # If we have a valid best_rank, use that
+            logging.warning(f"Error during decomposition with rank {current_rank}: {str(e)}")
             if best_rank is not None:
                 return best_rank, best_misclassification, best_f1_error
-            # Otherwise, try next rank
-            current_rank += 1
     
-    # Ensure we always return valid rank
     if best_rank is None:
-        best_rank = 1  # Default to rank 1 if all attempts failed
+        best_rank = 1
     
     return best_rank, best_misclassification, best_f1_error
 
-def decompose_tensor(tensor, output_dir, tensor_name):
+def decompose_tensor(
+    tensor: torch.Tensor,
+    output_dir: Path,
+    tensor_name: str,
+    rank: int = 1000,
+    verbose: bool = False
+) -> Dict[str, Any]:
     """Decompose a single tensor and save its components."""
-    print(f"Finding optimal rank for {tensor_name}...")
+    logging.info(f"Processing tensor: {tensor_name}")
+    
+    # Get appropriate device
+    device = get_device()
     
     # Check if tensor is binary
-    unique_values = np.unique(tensor)
-    is_binary = len(unique_values) == 2 and set(unique_values) == {0, 1}
+    unique_values = torch.unique(tensor)
+    is_binary = len(unique_values) == 2 and set(unique_values.cpu().numpy()) == {0, 1}
+    
     if not is_binary:
-        print("Warning: Tensor is not binary, results may be unreliable")
+        logging.warning("Tensor is not binary, results may be unreliable")
     
-    # rank, misclassification, f1_error = find_optimal_rank(tensor)
-    rank = 100
+    # Set appropriate backend
+    tl.set_backend('pytorch')
     
-    # Perform final decomposition with optimal rank
+    # Perform decomposition
     weights, factors = parafac(tensor, rank=rank, 
                               init='random',
                               tol=1e-6,
                               n_iter_max=100)
-    final_misclassification, final_f1_error = calculate_reconstruction_error(tensor, weights, factors)
     
-    print(f"Tensor shape: {tensor.shape}")
-    print(f"Optimal rank: {rank}")
-    print(f"Misclassification rate: {final_misclassification:.4%}")
-    print(f"F1 error: {final_f1_error:.4%}")
+    final_misclassification, final_f1_error = calculate_reconstruction_error(tensor, weights, factors, device)
+    
+    logging.info(f"Tensor shape: {tensor.shape}")
+    logging.info(f"Rank: {rank}")
+    logging.info(f"Misclassification rate: {final_misclassification:.4%}")
+    logging.info(f"F1 error: {final_f1_error:.4%}")
+    
+    # Convert results to numpy for saving
+    weights_np = weights.cpu().numpy()
+    factors_np = [f.cpu().numpy() for f in factors]
     
     # Save results
-    np.save(output_dir / "weights.npy", weights)
-    for i, factor in enumerate(factors):
+    np.save(output_dir / "weights.npy", weights_np)
+    for i, factor in enumerate(factors_np):
         np.save(output_dir / f"factor_{i}.npy", factor)
     
     # Save metadata
@@ -109,15 +163,28 @@ def decompose_tensor(tensor, output_dir, tensor_name):
         'rank': rank,
         'misclassification': float(final_misclassification),
         'f1_error': float(final_f1_error),
-        'is_binary': is_binary
+        'is_binary': is_binary,
+        'device_used': device.type
     }
     np.save(output_dir / "metadata.npy", metadata)
     
-    print(f"Saved decomposition for {tensor_name}")
+    logging.info(f"Saved decomposition for {tensor_name}")
+    return metadata
 
 def main():
-    # Set the backend to scipy explicitly
-    tl.set_backend('numpy')
+    parser = argparse.ArgumentParser(description='Perform PARAFAC decomposition on tensors')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
+    parser.add_argument('--rank', type=int, default=1000, help='Rank for PARAFAC decomposition')
+    parser.add_argument('--find-rank', action='store_true', help='Find optimal rank instead of using fixed rank')
+    args = parser.parse_args()
+    
+    setup_logging(args.verbose)
+    
+    # Get appropriate device
+    device = get_device()
+    
+    # Set the backend to PyTorch
+    tl.set_backend('pytorch')
     
     # Create output directory if it doesn't exist
     output_dir = Path("data/parafac_decomposed_tensors")
@@ -127,31 +194,45 @@ def main():
     input_path = Path("data/raw_tensors")
     
     # Process each grid size directory
-    for grid_dir in input_path.iterdir():
+    grid_dirs = list(input_path.iterdir())
+    for grid_dir in tqdm(grid_dirs, desc="Processing grid sizes", disable=not args.verbose):
         if not grid_dir.is_dir():
             continue
             
-        print(f"\nProcessing grid size directory: {grid_dir.name}")
+        logging.info(f"Processing grid size directory: {grid_dir.name}")
         
         # Create corresponding output directory
         grid_output_dir = output_dir / grid_dir.name
         grid_output_dir.mkdir(exist_ok=True)
         
         # Process each tensor in the grid size directory
-        for tensor_file in grid_dir.glob("*.npy"):
-            print(f"Processing {tensor_file.name}...")
-            
+        tensor_files = list(grid_dir.glob("*.npy"))
+        for tensor_file in tqdm(tensor_files, desc=f"Processing tensors in {grid_dir.name}", 
+                              disable=not args.verbose, leave=False):
             # Create a separate directory for this tensor's decomposition
             tensor_dir = grid_output_dir / tensor_file.stem
             tensor_dir.mkdir(exist_ok=True)
             
-            # Load tensor
-            tensor = np.load(tensor_file)
+            # Load tensor and convert to PyTorch
+            tensor = torch.from_numpy(np.load(tensor_file))
+            
+            # Find optimal rank if requested
+            if args.find_rank:
+                optimal_rank, misclassification, f1_error = find_optimal_rank(
+                    tensor, 
+                    max_rank=args.rank,
+                    device=device,
+                    verbose=args.verbose
+                )
+                logging.info(f"Found optimal rank: {optimal_rank}")
+                rank = optimal_rank
+            else:
+                rank = args.rank
             
             # Decompose and save
-            decompose_tensor(tensor, tensor_dir, tensor_file.name)
+            decompose_tensor(tensor, tensor_dir, tensor_file.name, rank=rank, verbose=args.verbose)
             
-        print(f"Completed processing {grid_dir.name}")
+        logging.info(f"Completed processing {grid_dir.name}")
 
 if __name__ == "__main__":
     main() 

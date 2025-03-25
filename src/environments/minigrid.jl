@@ -321,7 +321,8 @@ function generate_observation_tensor(n::Int)
     n_door_positions = n_states - 2n  # door cannot be in leftmost or rightmost columns
 
     # Initialize observation tensor
-    B = zeros(Float64, 7, 7, 5, n_states, 4, n_key_positions, n_door_positions, 3)
+    B = BitArray(undef, 7, 7, 5, n_states, 4, n_key_positions, n_door_positions, 3)
+    B .= 0
 
     # For each agent state, orientation, key position, and door position
     for agent_state in 1:n_states
@@ -359,7 +360,7 @@ end
 
 
 function get_orientation_transition_tensor()
-    T = zeros(Float64, 4, 4, 5)
+    T = zeros(Float32, 4, 4, 5)
     T[:, :, 1] = [
         0.0 1.0 0.0 0.0
         0.0 0.0 1.0 0.0
@@ -395,7 +396,8 @@ end
 
 function merge_states(dim1, dim2)
     n_states = dim1 * dim2
-    T = zeros(Float64, n_states, dim1, dim2)
+    T = BitArray(undef, n_states, dim1, dim2)
+    T .= 0
     for i in 1:dim1
         for j in 1:dim2
             T[(dim2*(i-1))+j, i, j] = 1.0
@@ -448,7 +450,8 @@ function get_self_transition_tensor(n::Int)
     n_key_positions = n_states - 2n
     n_door_positions = n_states - 2n
     n_door_key_states = 3
-    T = zeros(Float64, n_states, n_states, n_orientations, n_key_positions, n_door_positions, n_door_key_states, n_actions)
+    T = BitArray(undef, n_states, n_states, n_orientations, n_key_positions, n_door_positions, n_door_key_states, n_actions)
+    T .= 0
     for old_agent_state in 1:n_states
         agent_x, agent_y = state_to_coords(old_agent_state, n)
         for orientation in 1:n_orientations
@@ -523,7 +526,8 @@ function get_key_door_state_transition_tensor(n::Int)
     n_orientations = 4
     n_door_positions = n_states - 2n
     n_key_positions = n_states - 2n
-    T = zeros(Float64, n_door_key_states, n_door_key_states, n_states, n_orientations, n_key_positions, n_door_positions, 5)
+    T = BitArray(undef, n_door_key_states, n_door_key_states, n_states, n_orientations, n_key_positions, n_door_positions, 5)
+    T .= 0
     for old_agent_state in 1:n_states
         agent_x, agent_y = state_to_coords(old_agent_state, n)
         for orientation in 1:n_orientations

@@ -1,4 +1,5 @@
 import gymnasium as gym
+from gymnasium.envs.registration import register
 import minigrid
 
 from fastapi import FastAPI, HTTPException
@@ -8,8 +9,14 @@ from typing import Dict, Any
 # Initialize FastAPI app
 app = FastAPI()
 
+register(
+    id="MiniGrid-DoorKey-7x7-v0",
+    entry_point="minigrid.envs:DoorKeyEnv",
+    kwargs={"size": 7},
+)
+
 # Create environment
-env = gym.make("MiniGrid-DoorKey-6x6-v0", render_mode="human")
+env = gym.make("MiniGrid-DoorKey-5x5-v0", render_mode="human")
 
 # Initialize environment state
 observation, info = env.reset()

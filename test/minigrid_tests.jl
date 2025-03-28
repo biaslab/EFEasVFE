@@ -321,7 +321,7 @@
 
     @testset "Door state transition tensor" begin
         for n in 4:7
-            T = get_door_key_state_transition_tensor(n)
+            T = get_key_door_state_transition_tensor(n)
             @test size(T) == (3, 3, n^2, 4, n^2 - 2n, n^2 - 2n, 5)
 
             # Test that door state remains unchanged for actions other than toggle (5) or pickup (4)
@@ -360,7 +360,7 @@
 
     @testset "Key state transition tensor" begin
         for n in 4:7
-            T = get_door_key_state_transition_tensor(n)
+            T = get_key_door_state_transition_tensor(n)
             @test size(T) == (3, 3, n^2, 4, n^2 - 2n, n^2 - 2n, 5)
 
             # Test that key state remains unchanged for actions other than pickup (4)

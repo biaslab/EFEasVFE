@@ -48,11 +48,11 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
         env_state = reset_environment()
 
         # Initialize beliefs
-        p_old_location = vague(Categorical, grid_size^2)
-        p_old_orientation = vague(Categorical, 4)
-        p_key_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-        p_door_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-        p_old_key_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
+        p_old_location = Categorical(fill(Float32(1 / grid_size^2), grid_size^2))
+        p_old_orientation = Categorical(fill(Float32(1 / 4), 4))
+        p_key_location = Categorical(fill(Float32(1 / (grid_size^2 - 2 * grid_size)), grid_size^2 - 2 * grid_size))
+        p_door_location = Categorical(fill(Float32(1 / (grid_size^2 - 2 * grid_size)), grid_size^2 - 2 * grid_size))
+        p_old_key_door_state = Categorical(Float32[1-2*tiny, tiny, tiny])
 
         reward = 0.0
 
@@ -68,7 +68,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
             current_obs = env_state["observation"]
 
             # Create observation tensor
-            obs_tensor = fill(zeros(5), 7, 7)
+            obs_tensor = fill(zeros(Float32, 5), 7, 7)
             for x in 1:7, y in 1:7
                 # Map from environment indices to our CellType indices
                 cell_idx = if current_obs["image"][x][y][1] == 0  # unseen
@@ -85,16 +85,16 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
                     Int(EMPTY)
                 end
                 # Create a fresh zero vector for each cell
-                obs_tensor[x, y] = zeros(5)
+                obs_tensor[x, y] = zeros(Float32, 5)
                 # Set only the corresponding index to 1.0
                 obs_tensor[x, y][cell_idx] = 1.0
             end
 
-            orientation = zeros(4)
+            orientation = zeros(Float32, 4)
             orientation[current_obs["direction"]+1] = 1.0
 
             # Create previous action vector
-            previous_action = zeros(5)
+            previous_action = zeros(Float32, 5)
             previous_action[next_action] = 1.0
 
             # Run inference
@@ -117,7 +117,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
                     action=previous_action,
                     orientation_observation=orientation
                 ),
-                callbacks=(after_iteration=after_iteration_callback,),
+                # callbacks=(after_iteration=after_iteration_callback,),
                 iterations=n_iterations,
                 initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_key_door_state, p_door_location, p_key_location)
             )
@@ -159,8 +159,8 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
 end
 
 # Set up environment parameters
-grid_size = 4
-T = 20
+grid_size = 3
+T = 15
 
 # Load Parafac decomposed tensors
 observation_tensors = load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/");
@@ -168,18 +168,13 @@ door_key_transition_tensor = get_key_door_state_transition_tensor(grid_size);
 orientation_transition_tensor = get_orientation_transition_tensor();
 location_transition_tensor = get_self_transition_tensor(grid_size);
 
-# door_key_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor");
-# orientation_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/orientation_transition_tensor.npy");
-# location_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor");
+door_key_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor");
+# orientation_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/orientation_transition_tensor");
+location_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor");
 
-# Generate other tensors
-# door_st_t = get_door_state_transition_tensor(grid_size) .+ tiny;
-# ori_st_t = get_orientation_transition_tensor() .+ tiny;
-# loc_st_t = get_self_transition_tensor(grid_size) .+ tiny;
-# key_st_t = get_key_state_transition_tensor(grid_size) .+ tiny;
 
 # Set goal (bottom right corner)
-goal = zeros(grid_size^2) .+ tiny
+goal = zeros(Float32, grid_size^2) .+ tiny
 goal[grid_size^2-grid_size+1] = 1.0
 goal = Categorical(goal ./ sum(goal))
 
@@ -190,7 +185,7 @@ callbacks = RxInferBenchmarkCallbacks()
 m_kl, s_kl = run_minigrid_agent(
     klcontrol_minigrid_agent,
     location_transition_tensor, orientation_transition_tensor, door_key_transition_tensor, observation_tensors, T, goal;
-    n_episodes=3, n_iterations=50, wait_time=0.0, callbacks=callbacks
+    n_episodes=10, n_iterations=70, wait_time=0.0, callbacks=callbacks
 )
 @show m_kl, s_kl
 
@@ -221,13 +216,13 @@ env_state = reset_environment()
 
 # Initial action (Turn left) 
 next_action = Int(TURN_LEFT)
-env_state = step_environment(0)
+
 
 # Get current observation
 current_obs = env_state["observation"]
 
 # Create observation tensor
-obs_tensor = fill(zeros(5), 7, 7)
+obs_tensor = fill(zeros(Float32, 5), 7, 7)
 for x in 1:7, y in 1:7
     # Map from environment indices to our CellType indices
     cell_idx = if current_obs["image"][x][y][1] == 0  # unseen
@@ -249,20 +244,20 @@ for x in 1:7, y in 1:7
     obs_tensor[x, y][cell_idx] = 1.0
 end
 
-orientation = zeros(4) .+ tiny
+orientation = zeros(Float32, 4) .+ tiny
 orientation[current_obs["direction"]+1] = 1.0
 
 # Create previous action vector
-previous_action = zeros(5) .+ tiny
+previous_action = zeros(Float32, 5) .+ tiny
 previous_action[next_action] = 1.0
 
-p_old_location = vague(Categorical, grid_size^2)
-p_old_orientation = vague(Categorical, 4)
-p_key_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-p_door_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-p_old_key_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
+p_old_location = Categorical(fill(Float32(1 / grid_size^2), grid_size^2))
+p_old_orientation = Categorical(fill(Float32(1 / 4), 4))
+p_key_location = Categorical(fill(Float32(1 / (grid_size^2 - 2 * grid_size)), grid_size^2 - 2 * grid_size))
+p_door_location = Categorical(fill(Float32(1 / (grid_size^2 - 2 * grid_size)), grid_size^2 - 2 * grid_size))
+p_old_key_door_state = Categorical(Float32[1-2*tiny, tiny, tiny])
 
-T = 20
+T = 3
 
 # Run single inference step
 # Run inference
@@ -285,7 +280,7 @@ result = infer(
         action=previous_action,
         orientation_observation=orientation
     ),
-    callbacks=(after_iteration=after_iteration_callback,),
+    callbacks=callbacks,
     iterations=100,
     initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_key_door_state, p_door_location, p_key_location),
     showprogress=true,
@@ -318,7 +313,7 @@ lines!(ax, 1:(length(fe_values)-5), fe_values[6:end])
 # Display the figure
 display(fig)
 
-m_T1 = vague(Categorical, 4)
+m_T1 = Categorical(fill(Float32(1 / 4), 4))
 m_T2 = p_key_location
 m_T3 = p_door_location
 m_T4 = p_old_key_door_state
@@ -337,6 +332,6 @@ p2 = @call_rule DiscreteTransition(:in, Marginalisation) (q_out=q_out, m_T1=m_T1
 
 probvec(p1) .- probvec(p2)
 
-
+@call_rule DiscreteTransition(:in, Marginalisation) (m_out=m_T1, m_T1=Categorical(fill(Float32(1 / 5), 5)), q_a=PointMass(orientation_transition_tensor))
 
 

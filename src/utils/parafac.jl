@@ -42,6 +42,19 @@ Base.size(cp::CPTensor) = cp.dims
 Base.size(cp::CPTensor, d::Int) = cp.dims[d]
 rank(cp::CPTensor) = cp.rank
 
+function find_missing_mode(modes::NTuple{N,Int}, n::Int) where {N}
+    expected_xor = 0
+    for i in 1:n
+        expected_xor ⊻= i
+    end
+
+    actual_xor = 0
+    for m in modes
+        actual_xor ⊻= m
+    end
+
+    return expected_xor ⊻ actual_xor
+end
 """
 Optimized inner product computation using preallocation and SIMD-friendly operations.
 """
@@ -62,7 +75,7 @@ function mode_product_inner!(result::AbstractVector{T},
     end
 
     # Find the remaining mode
-    remaining_mode = first(setdiff(1:length(cp.dims), modes))
+    remaining_mode = find_missing_mode(modes, length(cp.dims))
 
     # Compute final result using matrix-vector product
     mul!(result, cp.factors[remaining_mode], temp_products)
@@ -75,7 +88,7 @@ Non-allocating version that takes pre-allocated result vector
 function mode_product_inner(cp::CPTensor{T},
     vectors::NTuple{M,AbstractVector{T}},
     modes::NTuple{M,Int}) where {T<:AbstractFloat,M}
-    result = zeros(T, cp.dims[first(setdiff(1:length(cp.dims), modes))])
+    result = zeros(T, cp.dims[find_missing_mode(modes, length(cp.dims))])
     mode_product_inner!(result, cp, vectors, modes)
 end
 
@@ -83,7 +96,7 @@ end
 function mode_product_inner(cp::CPTensor{T},
     vectors::NTuple{M,SVector{D,T}},
     modes::NTuple{M,Int}) where {T<:AbstractFloat,M,D}
-    remaining_mode = first(setdiff(1:length(cp.dims), modes))
+    remaining_mode = find_missing_mode(modes, length(cp.dims))
     result = @MVector zeros(T, cp.dims[remaining_mode])
     mode_product_inner!(result, cp, vectors, modes)
     SVector(result)
@@ -153,7 +166,7 @@ Parameters:
 Returns:
 - CPTensor: The loaded CP tensor
 """
-function load_cp_tensor(dir::AbstractString; T::Type=Float64)
+function load_cp_tensor(dir::AbstractString; T::Type=Float32)
     # Load weights
     weights = npzread(joinpath(dir, "weights.npy"))
 
@@ -255,3 +268,55 @@ function load_cp_observation_tensors_with_metadata(base_dir::String)
     return tensors, metadata
 end
 
+"""
+Computes Σ (T ∘ (v₁⊗v₂⊗...)) ∘ log(T) where T is a CP tensor.
+The log is defined element-wise with log(0) = log_zero for elements < threshold.
+
+Parameters:
+- cp: CPTensor structure
+- vectors: Tuple of vectors matching tensor dimensions
+- threshold: Value below which tensor elements are considered 0 (default: 0.5)
+- log_zero: Value to use for log(0) (default: -1000.0)
+
+Returns:
+- The sum of the elementwise products
+"""
+function tensor_vector_log_product_sum(cp::CPTensor{T,N},
+    vectors::NTuple{N,AbstractVector{T}};
+    threshold::T=T(0.5),
+    log_zero::T=T(-1000.0)) where {T<:AbstractFloat,N}
+    result = zero(T)
+
+    # Pre-compute vector-factor products for efficiency
+    # vector_factor_products = ntuple(d -> cp.factors[d]' * vectors[d], N)
+
+    # Process each element
+    @inbounds for idx in CartesianIndices(cp.dims)
+        # Compute tensor value at this position
+        tensor_val = zero(T)
+
+        for r in 1:cp.rank
+            component_val = cp.weights[r]
+            for d in 1:N
+                component_val *= cp.factors[d][idx[d], r]
+            end
+            tensor_val += component_val
+        end
+
+        # Skip if effectively zero
+        if tensor_val < threshold
+            continue
+        end
+
+        # Compute outer product of vectors at this position
+        vector_prod = one(T)
+        for d in 1:N
+            vector_prod *= vectors[d][idx[d]]
+        end
+
+        # Add to result
+        result += tensor_val * vector_prod * log(tensor_val)
+    end
+
+    return result
+end

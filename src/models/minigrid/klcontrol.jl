@@ -21,19 +21,19 @@ import RxInfer: Categorical
     current_orientation ~ DiscreteTransition(old_orientation, orientation_transition_tensor, action)
     current_key_door_state ~ DiscreteTransition(old_key_door_state, key_door_transition_tensor, old_location, old_orientation, key_location, door_location, action)
 
-    # Observation model with Tucker decomposed tensors
+    # Observation model with Parafac decomposed tensors
     for x in 1:7, y in 1:7
         decomposed_tensor = observation_tensors[x, y]
         observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, current_orientation, key_location, door_location, current_key_door_state)
     end
-    orientation_observation ~ DiscreteTransition(current_orientation, diageye(4))
+    orientation_observation ~ DiscreteTransition(current_orientation, diageye(Float32, 4))
 
     # Planning (Active Inference)
     previous_location = current_location
     previous_orientation = current_orientation
     previous_key_door_state = current_key_door_state
     for t in 1:T
-        u[t] ~ Categorical([0.2, 0.2, 0.2, 0.2, 0.2])
+        u[t] ~ Categorical(fill(Float32(1 / 5), 5))
         location[t] ~ DiscreteTransition(previous_location, location_transition_tensor, previous_orientation, key_location, door_location, previous_key_door_state, u[t])
         orientation[t] ~ DiscreteTransition(previous_orientation, orientation_transition_tensor, u[t])
         key_door_state[t] ~ DiscreteTransition(previous_key_door_state, key_door_transition_tensor, previous_location, previous_orientation, key_location, door_location, u[t])
@@ -42,8 +42,8 @@ import RxInfer: Categorical
         previous_key_door_state = key_door_state[t]
     end
     location[end] ~ goal
-    orientation[end] ~ Categorical([0.25, 0.25, 0.25, 0.25])
-    key_door_state[end] ~ Categorical([tiny, tiny, 1.0 - 2 * tiny])
+    orientation[end] ~ Categorical(fill(Float32(1 / 4), 4))
+    key_door_state[end] ~ Categorical(Float32[tiny, tiny, 1.0-2*tiny])
 end
 
 @constraints function klcontrol_minigrid_agent_constraints()
@@ -54,9 +54,9 @@ end
     μ(current_orientation) = p_current_orientation
     μ(current_key_door_state) = p_current_key_door_state
 
-    μ(location) = vague(Categorical, size^2)
-    μ(orientation) = vague(Categorical, 4)
-    μ(key_door_state) = vague(Categorical, 3)
+    μ(location) = Categorical(fill(Float32(1 / size^2), size^2))
+    μ(orientation) = Categorical(fill(Float32(1 / 4), 4))
+    μ(key_door_state) = p_current_key_door_state
     μ(door_location) = p_door_location
     μ(key_location) = p_key_location
 

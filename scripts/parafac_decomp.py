@@ -308,7 +308,9 @@ def decompose_tensor(
             logging.error(f"❌ Failed to clean all NaN/Inf values in {tensor_name}")
             return {"error": "Failed to clean NaN/Inf values", "had_nan_inf": True}
     
-    init = 'svd' if tensor.numel() < 900000 else 'random'
+    init = 'random'
+    logging.info(f"Tensor initialization: {init}")
+    
     if verbose:
         logging.info(f"Using {init} initialization")
     
@@ -317,10 +319,10 @@ def decompose_tensor(
         try:
             weights, factors = parafac(tensor, rank=rank, 
                                     init=init,
-                                    svd='randomized_svd',
+                                    # svd='randomized_svd',
                                     tol=1e-8,
                                     n_iter_max=300,
-                                    l2_reg=1e-6,
+                                    l2_reg=1e-4,
                                     verbose=verbose)
         except Exception as e:
             # If CUDA failed, try CPU fallback

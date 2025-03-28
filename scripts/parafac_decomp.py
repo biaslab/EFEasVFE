@@ -399,6 +399,7 @@ def main():
     parser.add_argument('--skip-errors', action='store_true', help='Skip tensors that cause errors instead of stopping')
     parser.add_argument('--fix-bit-arrays', action='store_true', help='Apply special handling for BitArrays from Julia', default=True)
     parser.add_argument('--fall-back-to-cpu', action='store_true', help='Fall back to CPU if CUDA SVD fails', default=True)
+    parser.add_argument('--force-recompute', action='store_true', help='Force recomputation even if decomposition exists')
     args = parser.parse_args()
     
     setup_logging(args.verbose)
@@ -430,11 +431,25 @@ def main():
         # Process tensors
         success_count = 0
         error_count = 0
+        skipped_count = 0
         
         for tensor_file in tqdm(tensor_files, desc=f"Processing tensors in {grid_dir.name}", 
                               disable=not args.verbose, leave=False):
             tensor_dir = grid_output_dir / tensor_file.stem
             tensor_dir.mkdir(exist_ok=True)
+            
+            # Check if decomposition already exists and is valid
+            if not args.force_recompute and tensor_dir.exists():
+                metadata_file = tensor_dir / "metadata.npy"
+                if metadata_file.exists():
+                    try:
+                        metadata = np.load(metadata_file, allow_pickle=True).item()
+                        if isinstance(metadata, dict) and 'error' not in metadata:
+                            logging.info(f"Skipping {tensor_file.name} - already decomposed successfully")
+                            skipped_count += 1
+                            continue
+                    except Exception as e:
+                        logging.warning(f"Error reading metadata for {tensor_file.name}, will recompute: {str(e)}")
             
             try:
                 # Process BitArray tensors differently if they come from Julia
@@ -507,11 +522,6 @@ def main():
                     if not args.skip_errors:
                         raise RuntimeError(f"Failed to decompose {tensor_file.name}")
                 
-                # Clear the tensor from memory
-                del tensor
-                if device.type == 'cuda':
-                    torch.cuda.empty_cache()
-                
             except Exception as e:
                 error_count += 1
                 logging.error(f"❌ Error processing {tensor_file.name}: {str(e)}")
@@ -519,8 +529,16 @@ def main():
                     continue
                 else:
                     raise
+            finally:
+                # Always clean up memory after processing each tensor
+                if device.type == 'cuda':
+                    torch.cuda.empty_cache()
             
-        logging.info(f"Completed processing {grid_dir.name} - Success: {success_count}, Errors: {error_count}")
+        logging.info(f"Completed processing {grid_dir.name} - Success: {success_count}, Errors: {error_count}, Skipped: {skipped_count}")
+        
+        # Clean up memory after processing each grid size directory
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     main() 

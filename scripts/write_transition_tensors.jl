@@ -112,7 +112,7 @@ function write_all_tensors(grid_size)
     println("Tensor processing complete!")
 end
 
-grid_size = 5
+grid_size = 3
 
 write_all_tensors(grid_size)
 

@@ -19,7 +19,7 @@ include(srcdir("rules/rules.jl"))
 BayesBase.mean(q_a::PointMass) = q_a.point
 
 # FastAPI server configuration
-const API_URL = "http://localhost:8000"
+const API_URL = "http://localhost:8888"
 
 function reset_environment()
     response = HTTP.request("GET", "$API_URL/reset")
@@ -39,9 +39,26 @@ function get_action_space()
     return JSON.parse(String(response.body))
 end
 
+# Interpolate goal
+function interpolate_goal(start_goal, end_goal, t, T)
+    # Convert t/T to a value centered around 0 (from -6 to 6 for good sigmoid range)
+    x = 60 * (t/T - 0.8888)
+    # Sigmoid function: 1 / (1 + exp(-x))
+    ratio = 1 / (1 + exp(-x))
+    # @show start_goal, end_goal
+    params_start = log.(start_goal.p)
+    params_end = log.(end_goal.p)
+    goal = exp.(params_start * (1 - ratio) + params_end * ratio)
+    return Categorical(goal / sum(goal))
+end
+
 function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor, observation_tensors, T, goal; n_episodes=1000, n_iterations=10, callbacks=nothing, wait_time=0.0)
     rewards = zeros(n_episodes)
     observations = keep(Any)
+
+    start_goal = Categorical(fill(Float32(1 / grid_size^2), grid_size^2))
+    @show goal
+    interpolated_goals = [interpolate_goal(start_goal, goal, i, T) for i in 1:T]
 
     @showprogress for i in 1:n_episodes
         # Reset environment
@@ -110,7 +127,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
                     key_door_transition_tensor=door_key_t_tensor,
                     observation_tensors=observation_tensors,
                     T=T - t,
-                    goal=goal
+                    goals=interpolated_goals
                 ),
                 data=(
                     observations=obs_tensor,
@@ -171,7 +188,6 @@ location_transition_tensor = get_self_transition_tensor(grid_size);
 door_key_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor");
 # orientation_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/orientation_transition_tensor");
 location_transition_tensor = load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor");
-
 
 # Set goal (bottom right corner)
 goal = zeros(Float32, grid_size^2) .+ tiny
@@ -258,6 +274,14 @@ p_door_location = Categorical(fill(Float32(1 / (grid_size^2 - 2 * grid_size)), g
 p_old_key_door_state = Categorical(Float32[1-2*tiny, tiny, tiny])
 
 T = 3
+start_goal = Categorical(fill(Float32(1 / grid_size^2), grid_size^2))
+
+goal = zeros(Float32, grid_size^2) .+ tiny
+goal[grid_size^2-grid_size+1] = 1.0
+goal = Categorical(goal ./ sum(goal))
+
+@show "inference running"
+interpolated_goals = [interpolate_goal(start_goal, goal, i, T) for i in 1:T]
 
 # Run single inference step
 # Run inference
@@ -273,7 +297,7 @@ result = infer(
         key_door_transition_tensor=door_key_transition_tensor,
         observation_tensors=observation_tensors,
         T=T,
-        goal=goal
+        goals=interpolated_goals
     ),
     data=(
         observations=obs_tensor,

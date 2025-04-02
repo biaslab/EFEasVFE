@@ -322,7 +322,7 @@ def decompose_tensor(
                                     # svd='randomized_svd',
                                     tol=1e-8,
                                     n_iter_max=300,
-                                    l2_reg=1e-4,
+                                    l2_reg=1e-1,
                                     verbose=verbose)
         except Exception as e:
             # If CUDA failed, try CPU fallback
@@ -337,7 +337,7 @@ def decompose_tensor(
                                         svd='randomized_svd',
                                         tol=1e-8,
                                         n_iter_max=300,
-                                        l2_reg=1e-6,
+                                        l2_reg=1e-3,
                                         verbose=verbose)
                 
                 # Move results back to original device

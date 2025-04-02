@@ -7,7 +7,7 @@ import RxInfer: Categorical
 
 # Define the model and constraints for the maze RxEnvironmentsZoo
 @model function klcontrol_minigrid_agent(p_old_location, p_old_orientation, p_key_location, p_door_location, p_old_key_door_state,
-    location_transition_tensor, orientation_transition_tensor, key_door_transition_tensor, observation_tensors, T, goal, observations, action, orientation_observation)
+    location_transition_tensor, orientation_transition_tensor, key_door_transition_tensor, observation_tensors, T, goals, observations, action, orientation_observation)
     # Prior initialization
     old_location ~ p_old_location
     old_orientation ~ p_old_orientation
@@ -40,8 +40,8 @@ import RxInfer: Categorical
         previous_location = location[t]
         previous_orientation = orientation[t]
         previous_key_door_state = key_door_state[t]
+        location[t] ~ goals[t]
     end
-    location[end] ~ goal
     orientation[end] ~ Categorical(fill(Float32(1 / 4), 4))
     key_door_state[end] ~ Categorical(Float32[tiny, tiny, 1.0-2*tiny])
 end

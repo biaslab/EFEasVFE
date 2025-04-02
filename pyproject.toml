@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.115.12",
+    "minigrid>=3.0.0",
     "sparse>=0.15.5",
     "uvicorn>=0.34.0",
 ]

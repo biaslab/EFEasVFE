@@ -19,7 +19,7 @@ include(srcdir("rules/rules.jl"))
 BayesBase.mean(q_a::PointMass) = q_a.point
 
 # FastAPI server configuration
-const API_URL = "http://localhost:8888"
+const API_URL = "http://macbookpro:8888"
 
 function reset_environment()
     response = HTTP.request("GET", "$API_URL/reset")
@@ -60,6 +60,8 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
     @show goal
     interpolated_goals = [interpolate_goal(start_goal, goal, i, T) for i in 1:T]
 
+    @show length(interpolated_goals)
+
     @showprogress for i in 1:n_episodes
         # Reset environment
         env_state = reset_environment()
@@ -83,7 +85,8 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
         for t in 1:T-1
             # Get current observation
             current_obs = env_state["observation"]
-
+            @show t
+            @show length(interpolated_goals[t:T])
             # Create observation tensor
             obs_tensor = fill(zeros(Float32, 5), 7, 7)
             for x in 1:7, y in 1:7
@@ -127,7 +130,7 @@ function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_key_t_tensor
                     key_door_transition_tensor=door_key_t_tensor,
                     observation_tensors=observation_tensors,
                     T=T - t,
-                    goals=interpolated_goals
+                    goals=interpolated_goals[t:T]
                 ),
                 data=(
                     observations=obs_tensor,

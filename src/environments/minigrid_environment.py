@@ -16,7 +16,7 @@ register(
 )
 
 # Create environment
-env = gym.make("MiniGrid-DoorKey-5x5-v0", render_mode="human")
+env = gym.make("MiniGrid-DoorKey-5x5-v0", render_mode=None)
 
 # Initialize environment state
 observation, info = env.reset()

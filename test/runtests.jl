@@ -1,14 +1,10 @@
-using DrWatson, Test, ReTestItems
-@quickactivate "EFEasVFE"
-
-# Here you include files using `srcdir`
-# include(srcdir("file.jl"))
+using DrWatson, Test, ReTestItems, EFEasVFE
 
 # Run test suite
 println("Starting tests")
 ti = time()
 
-include("minigrid_tests.jl")
+runtests(EFEasVFE)
 
 ti = time() - ti
 println("\nTest took total time of:")

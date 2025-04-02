@@ -12,6 +12,98 @@ include(srcdir("environments/stochastic_maze.jl"))
 include(srcdir("models/klcontrol.jl"))
 include(srcdir("models/efe.jl"))
 
+function RxEnvironments.plot_state(ax, env::StochasticMaze)
+    # Get grid dimensions from environment
+    grid_size_x = Int(sqrt(size(env.transition_tensor, 1)))
+    grid_size_y = grid_size_x
+
+    # Create grid lines
+    for x in 0:grid_size_x
+        vlines!(ax, x, 0, grid_size_y, color=:black, linewidth=0.5)
+    end
+    for y in 0:grid_size_y
+        hlines!(ax, y, 0, grid_size_x, color=:black, linewidth=0.5)
+    end
+
+    # Plot sink states in red
+    # Find sink states by checking where all actions point to same state
+    sink_states = []
+    for s in 1:size(env.transition_tensor, 1)
+        if all(env.transition_tensor[s, s, :] .== 1.0)
+            x = ((s - 1) % grid_size_x) + 1
+            y = div(s - 1, grid_size_x) + 1
+            push!(sink_states, (x, y))
+        end
+    end
+    for (x, y) in sink_states
+        poly!(ax,
+            [Point2f(x - 1, grid_size_y - y), Point2f(x, grid_size_y - y),
+                Point2f(x, grid_size_y - y + 1), Point2f(x - 1, grid_size_y - y + 1)],
+            color=(:red, 0.3))
+    end
+
+    # Plot reward states
+    for (state, reward) in env.reward_states
+        x = ((state - 1) % grid_size_x) + 1
+        y = div(state - 1, grid_size_x) + 1
+        color = reward > 0 ? :green : :red
+        opacity = abs(reward) # Use absolute value of reward for opacity
+        scatter!(ax, [x - 0.5], [grid_size_y - y + 0.5], color=(color, opacity), markersize=20)
+    end
+
+    # Plot observation noise
+    noisy_obs = []
+    for s in 1:size(env.observation_matrix, 1)
+        if env.observation_matrix[s, s] != 1.0
+            x = ((s - 1) % grid_size_x) + 1
+            y = div(s - 1, grid_size_x) + 1
+            noise = 1.0 - env.observation_matrix[s, s]
+            push!(noisy_obs, (x, y, noise))
+        end
+    end
+
+    for (x, y, noise) in noisy_obs
+        poly!(ax,
+            [Point2f(x - 1, grid_size_y - y), Point2f(x, grid_size_y - y),
+                Point2f(x, grid_size_y - y + 1), Point2f(x - 1, grid_size_y - y + 1)],
+            color=(:lightblue, noise))
+    end
+
+    # Plot stochastic states (bridge effect)
+    stochastic_states = []
+    for s in 1:size(env.transition_tensor, 1)
+        # Check if any action has non-1.0 probability for intended direction
+        if any(maximum(env.transition_tensor[:, s, a]) < 0.99 for a in 1:size(env.transition_tensor, 3))
+            x = ((s - 1) % grid_size_x) + 1
+            y = div(s - 1, grid_size_x) + 1
+            push!(stochastic_states, (x, y))
+        end
+    end
+
+    # Draw bridge planks in brown with gaps
+    for (x, y) in stochastic_states
+        # Draw 3 horizontal planks
+        for i in 0:2
+            poly!(ax,
+                [Point2f(x - 1, grid_size_y - y + 0.25 + i * 0.25),
+                    Point2f(x, grid_size_y - y + 0.25 + i * 0.25),
+                    Point2f(x, grid_size_y - y + 0.32 + i * 0.25),
+                    Point2f(x - 1, grid_size_y - y + 0.32 + i * 0.25)],
+                color=(:brown, 0.6))
+        end
+    end
+
+    for agent in env.agents
+        x = ((agent.state - 1) % grid_size_x) + 1
+        y = div(agent.state - 1, grid_size_x) + 1
+        scatter!(ax, [x - 0.5], [grid_size_y - y + 0.5], color=:blue, markersize=20)
+    end
+
+    # Set proper axis limits and remove ticks
+    limits!(ax, 0, grid_size_x, 0, grid_size_y)
+    hidedecorations!(ax)
+end
+
 T = 9
 goal_state = 15
 

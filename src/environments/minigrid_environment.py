@@ -24,6 +24,9 @@ observation, info = env.reset()
 class Action(BaseModel):
     action: int
 
+class GridSize(BaseModel):
+    grid_size: int
+
 @app.get("/reset")
 async def reset_environment():
     """Reset the environment and return initial observation"""
@@ -73,3 +76,28 @@ async def get_action_space():
             6: "done"
         }
     }
+
+@app.post("/reinitialize")
+async def reinitialize_environment(grid_size: GridSize):
+    """Reinitialize the environment with a new grid size"""
+    new_grid_size = grid_size.grid_size
+    global env, observation, info
+    try:
+        # Create environment
+        register(
+            id=f"MiniGrid-DoorKey-{new_grid_size}x{new_grid_size}-v0",
+            entry_point="minigrid.envs:DoorKeyEnv",
+            kwargs={"size": new_grid_size},
+        )
+        env = gym.make(f"MiniGrid-DoorKey-{new_grid_size}x{new_grid_size}-v0", render_mode="human")
+        observation, info = env.reset()
+        observation = {
+            "image": observation["image"].tolist(),
+            "direction": int(observation["direction"])
+        }
+        return {
+            "observation": observation,
+            "info": info
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

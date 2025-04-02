@@ -1,9 +1,7 @@
 @testitem "Minigrid Environment Tests" begin
     using Test
     using LinearAlgebra
-    using DrWatson
-    @quickactivate "EFEasVFE"
-    include(srcdir("environments/minigrid.jl"))
+    using EFEasVFE
 
     @testset "Coordinate Conversion" begin
         # Test state_to_coords

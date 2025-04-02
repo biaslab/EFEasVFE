@@ -1,10 +1,16 @@
 name = "EFEasVFE"
+uuid = "bd59a8c5-9db7-47e6-b88a-465bf09f9b5b"
 authors = ["wouterwln"]
+version = "0.0.1"
 
 [deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 NPZ = "15e1cf62-19b3-5cfa-8e77-841668bca605"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 ReactiveMP = "a194aa59-28ba-4574-a09c-4a745416d6e3"
@@ -13,6 +19,7 @@ RxEnvironmentsZoo = "adb3f080-5af9-40cb-b3ca-0db92be4ebef"
 RxInfer = "86711068-29c9-4ff7-b620-ae75d7495b3d"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 TensorOperations = "6aa20fa7-93e2-5fca-9bc0-fbd0db3c71a2"
+TinyHugeNumbers = "783c9a47-75a3-44ac-a16b-f1ab7b3acf04"
 Tullio = "bc48ee85-29a4-5162-ae0b-a64e1601d4bc"
 
 [compat]
@@ -20,3 +27,13 @@ RxEnvironments = "0.2"
 RxEnvironmentsZoo = "0.0.1"
 RxInfer = "4.0"
 julia = "1.10"
+
+[extras]
+ReTestItems = "817f1d60-ba6b-4fd5-9520-3cf149f6a823"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[sources.RxEnvironmentsZoo]
+path = "`~/.julia/dev/RxEnvironmentsZoo`"
+
+[targets]
+test = ["Test", "ReTestItems"]

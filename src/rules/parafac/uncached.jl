@@ -1,6 +1,7 @@
 using TensorOperations
 
 relu(x) = max(x, tiny)
+BayesBase.mean(q_a::PointMass) = q_a.point
 
 # Rules for observation model (q_out is pointmass)
 @rule DiscreteTransition(:in, Marginalisation) (q_out::PointMass, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:CPTensor}, meta::Any) = begin

@@ -88,12 +88,13 @@ function step_environment(action::Int)
 end
 
 """
-    reinitialize_environment(grid_size::Int)
+    reinitialize_environment(grid_size::Int; render_mode::Union{String,Nothing}="human")
 
 Reinitialize the environment with a new grid size.
 
 # Arguments
 - `grid_size::Int`: The new grid size
+- `render_mode::Union{String,Nothing}`: The rendering mode ("human" or nothing for no rendering)
 
 # Returns
 - Dictionary containing the new environment state
@@ -101,12 +102,15 @@ Reinitialize the environment with a new grid size.
 # Throws
 - `EnvironmentError` if the reinitialize request fails
 """
-function reinitialize_environment(grid_size::Int)
+function reinitialize_environment(grid_size::Int; render_mode::String="human")
     response = HTTP.request(
         "POST",
         "$API_URL/reinitialize",
         ["Content-Type" => "application/json"],
-        JSON.json(Dict("grid_size" => grid_size))
+        JSON.json(Dict(
+            "grid_size" => grid_size,
+            "render_mode" => render_mode
+        ))
     )
     return check_response(response)
 end

@@ -143,7 +143,8 @@ function run_experiment(config::ExperimentConfig)
         n_episodes=config.n_episodes,
         n_iterations=config.n_iterations,
         wait_time=config.wait_time,
-        number_type=config.number_type
+        number_type=config.number_type,
+        visualize=config.visualize
     )
 
     # Run KL control agent

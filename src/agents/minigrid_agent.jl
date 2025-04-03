@@ -15,6 +15,7 @@ Base.@kwdef struct MinigridConfig{T<:AbstractFloat}
     n_iterations::Int
     wait_time::Float64
     number_type::Type{T}
+    visualize::Bool
 end
 
 Base.@kwdef mutable struct MinigridBeliefs{T<:AbstractFloat}
@@ -154,7 +155,7 @@ end
 
 function run_single_episode(model, tensors, config, goal, callbacks)
     # Reinitialize environment with correct grid size
-    env_state = reinitialize_environment(config.grid_size + 2)
+    env_state = reinitialize_environment(config.grid_size + 2, render_mode=config.visualize ? "human" : "rgb_array")
     beliefs = initialize_beliefs(config.grid_size, config.number_type)
     reward = execute_initial_action(config.grid_size)
     action = 1

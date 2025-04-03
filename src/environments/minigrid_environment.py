@@ -16,7 +16,7 @@ register(
 )
 
 # Create environment
-env = gym.make("MiniGrid-DoorKey-5x5-v0", render_mode="human")
+env = gym.make("MiniGrid-DoorKey-5x5-v0", render_mode=None)
 
 # Initialize environment state
 observation, info = env.reset()
@@ -82,7 +82,7 @@ async def get_action_space():
 async def reinitialize_environment(grid_size: GridSize):
     """Reinitialize the environment with a new grid size and optional rendering mode"""
     new_grid_size = grid_size.grid_size
-    render_mode = grid_size.render_mode
+    render_mode = grid_size.render_mode if grid_size.render_mode == "human" else None
     global env, observation, info
     try:
         # Create environment

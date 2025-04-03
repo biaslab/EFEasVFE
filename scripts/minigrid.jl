@@ -62,6 +62,18 @@ Base.@kwdef struct ExperimentConfig
     save_results::Bool
 end
 
+function Base.show(io::IO, config::ExperimentConfig)
+    println(io, "ExperimentConfig:")
+    println(io, "grid_size=$(config.grid_size), ")
+    println(io, "time_horizon=$(config.time_horizon), ")
+    println(io, "n_episodes=$(config.n_episodes), ")
+    println(io, "n_iterations=$(config.n_iterations), ")
+    println(io, "wait_time=$(config.wait_time), ")
+    println(io, "number_type=$(config.number_type), ")
+    println(io, "verbosity=$(config.verbosity), ")
+    println(io, "visualize=$(config.visualize), ")
+    println(io, "save_results=$(config.save_results)")
+end
 """
     validate_parameters(grid_size, time_horizon, n_episodes)
 
@@ -69,7 +81,6 @@ Validate the experiment parameters and throw an error if they are invalid.
 """
 function validate_parameters(grid_size, time_horizon, n_episodes)
     grid_size > 0 || throw(ArgumentError("grid_size must be positive"))
-    grid_size <= 10 || throw(ArgumentError("grid_size must be <= 10 (current implementation limit)"))
     time_horizon > 0 || throw(ArgumentError("time_horizon must be positive"))
     n_episodes > 0 || throw(ArgumentError("n_episodes must be positive"))
 end
@@ -85,7 +96,10 @@ function load_tensors(grid_size)
     observation_tensors = EFEasVFE.load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/")
     door_key_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor")
     location_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor")
-    orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor()
+    # observation_tensors = collect.(eachslice(EFEasVFE.generate_observation_tensor(grid_size, Float32), dims=(1, 2)))
+    # door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, Float32)
+    # location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, Float32)
+    orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(Float32)
 
     @debug "Tensors loaded successfully"
 

@@ -4,6 +4,7 @@
     using EFEasVFE
 
     @testset "Coordinate Conversion" begin
+        import EFEasVFE: state_to_coords, coords_to_state
         # Test state_to_coords
         @test state_to_coords(1, 4) == (1, 1)  # Top-left corner
         @test state_to_coords(4, 4) == (1, 4)  # Top-right corner
@@ -23,6 +24,7 @@
     end
 
     @testset "Relative Coordinates" begin
+        import EFEasVFE: get_relative_coords, relative_to_absolute_coords, RIGHT, DOWN, LEFT, UP
         # Test facing right
         @test get_relative_coords(2, 2, Int(RIGHT), 2, 3) == (-1, 0)  # Target to left
         @test get_relative_coords(2, 2, Int(RIGHT), 1, 2) == (0, -1)  # Target below
@@ -87,6 +89,7 @@
     end
 
     @testset "Field of View" begin
+        import EFEasVFE: in_fov, relative_to_fov_coords
         # Test in_fov
         @test in_fov(0, 0) == true     # Agent's position
         @test in_fov(3, 6) == true     # Top-right corner of FOV
@@ -104,6 +107,7 @@
 
 
     @testset "Visibility Mask" begin
+        import EFEasVFE: generate_visibility_mask
         # Test simple visibility mask with no walls
         width, height = 7, 7
         agent_x, agent_y = 4, 7
@@ -152,6 +156,7 @@
     end
 
     @testset "Key and Door Position" begin
+        import EFEasVFE: key_position, door_position
         @test key_position(1, 4) == (1, 1)
         @test key_position(2, 4) == (1, 2)
         @test key_position(3, 4) == (1, 3)
@@ -172,8 +177,9 @@
     end
 
     @testset "Observation Tensor" begin
+        import EFEasVFE: generate_observation_tensor, get_observation, EMPTY, WALL, INVISIBLE, KEY, DOOR
         for n in 4:7
-            B = generate_observation_tensor(n)
+            B = generate_observation_tensor(n, Float64)
 
             # Test tensor dimensions
             @test size(B) == (7, 7, 5, n^2, 4, n^2 - 2n, n^2 - 2n, 3)
@@ -218,6 +224,7 @@
     end
 
     @testset "Wall Set Creation" begin
+        import EFEasVFE: create_wall_set
         # Test wall set for a 4×4 grid with door at (2, 2)
         walls = create_wall_set(2, 2, 4)
 
@@ -265,6 +272,7 @@
     end
 
     @testset "get_fov" begin
+        import EFEasVFE: get_fov, EMPTY, RIGHT, DOWN, INVISIBLE, WALL, DOOR, KEY, UP, LEFT
         fov = get_fov(1, 4, Int(RIGHT), 1, 2, 3, 2, 1, 4)
         @test fov == [
             Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) Int(INVISIBLE) # Column 3 to the left is completely invisible
@@ -298,8 +306,9 @@
         ]
     end
     @testset "Movement transition tensor" begin
+        import EFEasVFE: get_self_transition_tensor, EMPTY, RIGHT, DOWN, INVISIBLE, WALL, DOOR, KEY, UP, LEFT
         for n in 4:7
-            T = get_self_transition_tensor(n)
+            T = get_self_transition_tensor(n, Float64)
             @test size(T) == (n^2, n^2, 4, n^2 - 2n, n^2 - 2n, 3, 5)
             for old_state in 1:n^2, orientation in 1:4, key_pos in 1:(n^2-2n), door_pos in 1:(n^2-2n), door_key_state in 1:3, action in 1:5
                 if action != 3
@@ -318,8 +327,9 @@
     end
 
     @testset "Door state transition tensor" begin
+        import EFEasVFE: get_key_door_state_transition_tensor, EMPTY, RIGHT, DOWN, INVISIBLE, WALL, DOOR, KEY, UP, LEFT
         for n in 4:7
-            T = get_key_door_state_transition_tensor(n)
+            T = get_key_door_state_transition_tensor(n, Float64)
             @test size(T) == (3, 3, n^2, 4, n^2 - 2n, n^2 - 2n, 5)
 
             # Test that door state remains unchanged for actions other than toggle (5) or pickup (4)
@@ -356,9 +366,10 @@
         end
     end
 
-    @testset "Key state transition tensor" begin
+    @testset "Key door state transition tensor" begin
+        import EFEasVFE: get_key_door_state_transition_tensor, EMPTY, RIGHT, DOWN, INVISIBLE, WALL, DOOR, KEY, UP, LEFT
         for n in 4:7
-            T = get_key_door_state_transition_tensor(n)
+            T = get_key_door_state_transition_tensor(n, Float64)
             @test size(T) == (3, 3, n^2, 4, n^2 - 2n, n^2 - 2n, 5)
 
             # Test that key state remains unchanged for actions other than pickup (4)

@@ -26,6 +26,7 @@ class Action(BaseModel):
 
 class GridSize(BaseModel):
     grid_size: int
+    render_mode: str = "human"  # Default to human rendering
 
 @app.get("/reset")
 async def reset_environment():
@@ -79,8 +80,9 @@ async def get_action_space():
 
 @app.post("/reinitialize")
 async def reinitialize_environment(grid_size: GridSize):
-    """Reinitialize the environment with a new grid size"""
+    """Reinitialize the environment with a new grid size and optional rendering mode"""
     new_grid_size = grid_size.grid_size
+    render_mode = grid_size.render_mode
     global env, observation, info
     try:
         # Create environment
@@ -89,7 +91,7 @@ async def reinitialize_environment(grid_size: GridSize):
             entry_point="minigrid.envs:DoorKeyEnv",
             kwargs={"size": new_grid_size},
         )
-        env = gym.make(f"MiniGrid-DoorKey-{new_grid_size}x{new_grid_size}-v0", render_mode="human")
+        env = gym.make(f"MiniGrid-DoorKey-{new_grid_size}x{new_grid_size}-v0", render_mode=render_mode)
         observation, info = env.reset()
         observation = {
             "image": observation["image"].tolist(),

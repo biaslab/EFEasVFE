@@ -314,15 +314,14 @@ Args:
 Returns:
     Array{Float64, 6}: Observation tensor of shape (7, 7, 5, n^2, 4, n^2 - 2n, n^2 - 2n)
 """
-function generate_observation_tensor(n::Int)
+function generate_observation_tensor(n::Int, number_type::Type{T}) where {T}
     # Calculate dimensions
     n_states = n * n
     n_key_positions = n_states - 2n  # key cannot be in two rightmost columns
     n_door_positions = n_states - 2n  # door cannot be in leftmost or rightmost columns
 
     # Initialize observation tensor
-    B = BitArray(undef, 7, 7, 5, n_states, 4, n_key_positions, n_door_positions, 3)
-    B .= 0
+    B = zeros(number_type, 7, 7, 5, n_states, 4, n_key_positions, n_door_positions, 3)
 
     # For each agent state, orientation, key position, and door position
     for agent_state in 1:n_states
@@ -359,51 +358,50 @@ function get_observation(B, agent_state, orientation, key_pos, door_pos, has_key
 end
 
 
-function get_orientation_transition_tensor()
-    T = zeros(Float32, 4, 4, 5)
-    T[:, :, 1] = [
+function get_orientation_transition_tensor(number_type::Type{T}) where {T}
+    result = zeros(number_type, 4, 4, 5)
+    result[:, :, 1] = [
         0.0 1.0 0.0 0.0
         0.0 0.0 1.0 0.0
         0.0 0.0 0.0 1.0
         1.0 0.0 0.0 0.0
     ]
-    T[:, :, 2] = [
+    result[:, :, 2] = [
         0.0 0.0 0.0 1.0
         1.0 0.0 0.0 0.0
         0.0 1.0 0.0 0.0
         0.0 0.0 1.0 0.0
     ]
-    T[:, :, 3] = [
+    result[:, :, 3] = [
         1.0 0.0 0.0 0.0
         0.0 1.0 0.0 0.0
         0.0 0.0 1.0 0.0
         0.0 0.0 0.0 1.0
     ]
-    T[:, :, 4] = [
+    result[:, :, 4] = [
         1.0 0.0 0.0 0.0
         0.0 1.0 0.0 0.0
         0.0 0.0 1.0 0.0
         0.0 0.0 0.0 1.0
     ]
-    T[:, :, 5] = [
+    result[:, :, 5] = [
         1.0 0.0 0.0 0.0
         0.0 1.0 0.0 0.0
         0.0 0.0 1.0 0.0
         0.0 0.0 0.0 1.0
     ]
-    return T
+    return result
 end
 
-function merge_states(dim1, dim2)
+function merge_states(dim1, dim2, number_type::Type{T}) where {T}
     n_states = dim1 * dim2
-    T = BitArray(undef, n_states, dim1, dim2)
-    T .= 0
+    result = zeros(number_type, n_states, dim1, dim2)
     for i in 1:dim1
         for j in 1:dim2
-            T[(dim2*(i-1))+j, i, j] = 1.0
+            result[(dim2*(i-1))+j, i, j] = 1.0
         end
     end
-    return T
+    return result
 end
 
 function get_next_agent_position(agent_x::Int, agent_y::Int, orientation::Int, door_x::Int, door_y::Int, key_x::Int, key_y::Int, door_key_state::Int, action::Int, n::Int)
@@ -443,41 +441,40 @@ function get_next_agent_position(agent_x::Int, agent_y::Int, orientation::Int, d
     end
 end
 
-function get_self_transition_tensor(n::Int)
+function get_self_transition_tensor(n::Int, number_type::Type{T}) where {T}
     n_orientations = 4
     n_actions = 5
     n_states = n * n
     n_key_positions = n_states - 2n
     n_door_positions = n_states - 2n
     n_door_key_states = 3
-    T = BitArray(undef, n_states, n_states, n_orientations, n_key_positions, n_door_positions, n_door_key_states, n_actions)
-    T .= 0
+    result = zeros(number_type, n_states, n_states, n_orientations, n_key_positions, n_door_positions, n_door_key_states, n_actions)
     for old_agent_state in 1:n_states
         agent_x, agent_y = state_to_coords(old_agent_state, n)
         for orientation in 1:n_orientations
             for door_pos in 1:n_door_positions
                 door_x, door_y = door_position(door_pos, n)
                 if agent_x == door_x && agent_y != door_y
-                    T[old_agent_state, old_agent_state, orientation, :, door_pos, :, :] .= 1.0
+                    result[old_agent_state, old_agent_state, orientation, :, door_pos, :, :] .= 1.0
                     continue
                 end
                 for key_pos in 1:n_key_positions
                     key_x, key_y = key_position(key_pos, n)
                     if key_x == door_x
-                        T[old_agent_state, old_agent_state, orientation, key_pos, door_pos, :, :] .= 1.0
+                        result[old_agent_state, old_agent_state, orientation, key_pos, door_pos, :, :] .= 1.0
                         continue
                     end
                     for door_key_state in 1:n_door_key_states
                         for action in 1:n_actions
                             new_agent_state = get_next_agent_position(agent_x, agent_y, orientation, door_x, door_y, key_x, key_y, door_key_state, action, n)
-                            T[new_agent_state, old_agent_state, orientation, key_pos, door_pos, door_key_state, action] = 1.0
+                            result[new_agent_state, old_agent_state, orientation, key_pos, door_pos, door_key_state, action] = 1.0
                         end
                     end
                 end
             end
         end
     end
-    return T
+    return result
 end
 
 function get_new_door_key_state(agent_x::Int, agent_y::Int, orientation::Int, key_x::Int, key_y::Int, door_x::Int, door_y::Int, action::Int, door_key_state::Int)
@@ -520,14 +517,13 @@ function get_new_door_key_state(agent_x::Int, agent_y::Int, orientation::Int, ke
     return door_key_state # Door state remains unchanged
 end
 
-function get_key_door_state_transition_tensor(n::Int)
+function get_key_door_state_transition_tensor(n::Int, number_type::Type{T}) where {T}
     n_states = n * n
     n_door_key_states = 3
     n_orientations = 4
     n_door_positions = n_states - 2n
     n_key_positions = n_states - 2n
-    T = BitArray(undef, n_door_key_states, n_door_key_states, n_states, n_orientations, n_key_positions, n_door_positions, 5)
-    T .= 0
+    result = zeros(number_type, n_door_key_states, n_door_key_states, n_states, n_orientations, n_key_positions, n_door_positions, 5)
     for old_agent_state in 1:n_states
         agent_x, agent_y = state_to_coords(old_agent_state, n)
         for orientation in 1:n_orientations
@@ -538,12 +534,63 @@ function get_key_door_state_transition_tensor(n::Int)
                     for door_key_state in 1:n_door_key_states
                         for action in 1:5
                             new_door_key_state = get_new_door_key_state(agent_x, agent_y, orientation, key_x, key_y, door_x, door_y, action, door_key_state)
-                            T[new_door_key_state, door_key_state, old_agent_state, orientation, key_pos, door_pos, action] = 1.0
+                            result[new_door_key_state, door_key_state, old_agent_state, orientation, key_pos, door_pos, action] = 1.0
                         end
                     end
                 end
             end
         end
     end
-    return T
+    return result
+end
+
+
+"""
+    create_mock_env_state(; grid_size, direction, agent_pos, key_pos, door_pos, door_key_state)
+
+Create a mock environment state for testing purposes.
+
+# Arguments
+- `grid_size::Int`: Size of the grid (excluding walls)
+- `direction::Int`: Agent's orientation (0=RIGHT, 1=DOWN, 2=LEFT, 3=UP)
+- `agent_pos::Tuple{Int,Int}`: Agent's (x,y) position
+- `key_pos::Tuple{Int,Int}`: Key's (x,y) position
+- `door_pos::Tuple{Int,Int}`: Door's (x,y) position
+- `door_key_state::Int`: Door/key state (1=key not collected, 2=key collected, 3=door open)
+
+# Returns
+Dict containing mock environment state with observation and direction fields
+"""
+function create_mock_env_state(;
+    grid_size::Int,
+    direction::Int,
+    agent_pos::Tuple{Int,Int},
+    key_pos::Tuple{Int,Int},
+    door_pos::Tuple{Int,Int},
+    door_key_state::Int
+)
+    # Validate inputs
+    @assert 0 <= direction <= 3 "Direction must be between 1 and 4"
+    @assert door_key_state in (1, 2, 3) "door_key_state must be 1, 2 or 3"
+
+    # Generate field of view
+    fov = get_fov(
+        agent_pos[1], agent_pos[2],
+        direction + 1,
+        key_pos[1], key_pos[2],
+        door_pos[1], door_pos[2],
+        door_key_state,
+        grid_size
+    )
+
+    # Create observation dict matching environment format
+    observation = Dict(
+        "image" => reshape(fov, 7, 7, 1),
+        "direction" => direction
+    )
+
+    return Dict(
+        "observation" => observation,
+        "direction" => direction
+    )
 end

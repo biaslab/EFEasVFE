@@ -26,14 +26,14 @@
         # Test cell observation creation
         obs = create_cell_observation(0, Float32)  # INVISIBLE
         @test length(obs) == 5
-        @test obs[Int(INVISIBLE)] ≈ 1.0f0
-        @test all(obs[i] ≈ tiny for i in 1:5 if i != Int(INVISIBLE))
+        @test obs[Int(INVISIBLE)] == 1.0f0
+        @test all(obs[i] == 0.0 for i in 1:5 if i != Int(INVISIBLE))
 
         # Test different number types
         obs_double = create_cell_observation(1, Float64)  # EMPTY
         @test length(obs_double) == 5
         @test obs_double[Int(EMPTY)] ≈ 1.0
-        @test all(obs_double[i] ≈ tiny for i in 1:5 if i != Int(EMPTY))
+        @test all(obs_double[i] == 0.0 for i in 1:5 if i != Int(EMPTY))
     end
 
     @testset "Action Conversion" begin

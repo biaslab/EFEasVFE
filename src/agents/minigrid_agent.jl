@@ -37,7 +37,7 @@ end
 
 function create_cell_observation(cell_value, T::Type{<:AbstractFloat})
     cell_idx = match_cell_type(cell_value)
-    cell_obs = zeros(T, 5) .+ tiny
+    cell_obs = zeros(T, 5)
     cell_obs[cell_idx] = one(T)
     return cell_obs
 end
@@ -95,17 +95,15 @@ function execute_initial_action(grid_size::Int)
     return env_state["reward"]
 end
 
-function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, T)
+function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining)
     current_obs = env_state["observation"]
     obs_tensor = create_observation_tensor(current_obs, config.number_type)
 
-    orientation = zeros(config.number_type, 4) .+ tiny
+    orientation = zeros(config.number_type, 4)
     orientation[current_obs["direction"]+1] = one(config.number_type)
 
-    previous_action = zeros(config.number_type, 5) .+ tiny
+    previous_action = zeros(config.number_type, 5)
     previous_action[executed_action] = one(config.number_type)
-
-    @debug "Running inference with location $(beliefs.location) orientation $(beliefs.orientation) key_location $(beliefs.key_location) door_location $(beliefs.door_location) key_door_state $(beliefs.key_door_state)"
 
     result = infer(
         model=model(
@@ -118,7 +116,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             orientation_transition_tensor=tensors.orientation,
             key_door_transition_tensor=tensors.door_key,
             observation_tensors=tensors.observation,
-            T=T,
+            T=time_remaining,
             goal=goal
         ),
         data=(
@@ -138,8 +136,6 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
         )
     )
 
-    @debug "Found policy: $(mode.(last(result.posteriors[:u])))"
-
     next_action = mode(first(last(result.posteriors[:u])))
     env_action = convert_action(next_action)
     @debug "Executing action: $next_action with environment encoding $env_action"
@@ -153,7 +149,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     beliefs.key_location = last(result.posteriors[:key_location])
     beliefs.door_location = last(result.posteriors[:door_location])
 
-    return next_action, env_state["reward"]
+    return next_action, env_state
 end
 
 function run_single_episode(model, tensors, config, goal, callbacks)
@@ -164,7 +160,8 @@ function run_single_episode(model, tensors, config, goal, callbacks)
     action = 1
 
     for t in config.time_horizon:-1:1
-        action, step_reward = execute_step(env_state, action, beliefs, model, tensors, config, goal, callbacks, t)
+        action, env_state = execute_step(env_state, action, beliefs, model, tensors, config, goal, callbacks, t)
+        step_reward = env_state["reward"]
         reward += step_reward
         step_reward > 0 && break
         sleep(config.wait_time)

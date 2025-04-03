@@ -14,7 +14,7 @@ Base.haskey(meta::CachingMeta, key::Symbol) = haskey(meta.cache, key)
 Base.setindex!(meta::CachingMeta, value::AbstractArray, key::Symbol) = setindex!(meta.cache, value, key)
 
 # Reset function to clear cache
-function reset!(meta::CachingMeta)
+function reset_cache!(meta::CachingMeta)
     empty!(meta.cache)
 end
 
@@ -29,7 +29,7 @@ function reset_cache!(node, fform::Type{DiscreteTransition}, meta::CachingMeta)
     if haskey(meta, :out)
         q_out = meta[:out]
     end
-    reset!(meta)
+    reset_cache!(meta)
     if !isnothing(q_out)
         meta[:out] = q_out
     end

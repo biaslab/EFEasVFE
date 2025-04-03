@@ -135,7 +135,7 @@ function run_maze_agent(environment, agent, model, A, B, goal, n_states, n_actio
 
 
     @showprogress for i in 1:n_episodes
-        reset!(environment, 11)
+        RxEnvironmentsZoo.reset!(environment, 11)
         p_s_0 = vague(Categorical, n_states)
 
         # Initial action

@@ -287,37 +287,6 @@ function main()
     # Run experiment
     mean_reward, std_reward = run_experiment(config)
 
-    # Visualize if requested
-    if args.visualize
-        @info "Running visualization"
-        visualize_episode(config)
-    end
-end
-
-function visualize_episode(config::ExperimentConfig)
-    # Create visualization config
-    viz_config = MinigridConfig(
-        grid_size=config.grid_size,
-        time_horizon=config.time_horizon,
-        n_episodes=1,
-        n_iterations=3,
-        wait_time=1.0,
-        number_type=config.number_type
-    )
-
-    # Load required data
-    tensors = load_tensors(config.grid_size)
-    goal = create_goal(config.grid_size, config.number_type)
-    callbacks = RxInferBenchmarkCallbacks()
-
-    # Run visualization
-    run_minigrid_agent(
-        klcontrol_minigrid_agent,
-        tensors,
-        viz_config,
-        goal;
-        callbacks=callbacks
-    )
 end
 
 # Run main function if script is run directly

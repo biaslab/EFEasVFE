@@ -1,312 +1,327 @@
 using DrWatson
 @quickactivate "EFEasVFE"
 
-using ReactiveMP
+using Logging
+using LoggingExtras
+using JLD2
+using Dates
+using Statistics
+using ArgParse
+using TinyHugeNumbers
+import RxInfer: Categorical
 using HTTP
-using JSON
-using ProgressMeter
 
-ReactiveMP.sdtype(::ReactiveMP.StandaloneDistributionNode) = ReactiveMP.Stochastic()
+# Import the main package
+using EFEasVFE
 
-include(srcdir("meta/cachingmeta.jl"))
-include(srcdir("environments/minigrid.jl"))
-include(srcdir("models/minigrid/klcontrol.jl"))
-
-# FastAPI server configuration
-const API_URL = "http://localhost:8000"
-
-function reset_environment()
-    response = HTTP.request("GET", "$API_URL/reset")
-    return JSON.parse(String(response.body))
+function not_HTTP_message_filter(log)
+    # HTTP.jl utilizes internal modules so call parentmodule(...)
+    log._module !== HTTP && parentmodule(log._module) !== HTTP
 end
 
-function step_environment(action::Int)
-    response = HTTP.request("POST", "$API_URL/step",
-        ["Content-Type" => "application/json"],
-        JSON.json(Dict("action" => action))
+# Configure logging
+function setup_logging(verbosity::Symbol)
+    level = if verbosity == :debug
+        Logging.Debug
+    elseif verbosity == :info
+        Logging.Info
+    else
+        Logging.Warn
+    end
+
+    # Create a timestamped log file
+    timestamp = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")
+    log_file = datadir("logs", "minigrid_$(timestamp).log")
+    mkpath(dirname(log_file))
+
+    # Configure logging to both file and console
+    logger = SimpleLogger(stdout, level)
+    file_logger = SimpleLogger(open(log_file, "w"), level)
+
+    # Create a filtered logger that excludes HTTP debug messages
+    http_filtered_logger = EarlyFilteredLogger(not_HTTP_message_filter, TeeLogger(logger, file_logger))
+
+    global_logger(http_filtered_logger)
+    @info "Logging initialized" level timestamp log_file
+end
+
+"""
+    ExperimentConfig
+
+Configuration struct for the minigrid experiment.
+"""
+Base.@kwdef struct ExperimentConfig
+    grid_size::Int
+    time_horizon::Int
+    n_episodes::Int
+    n_iterations::Int
+    wait_time::Float64
+    number_type::Type{<:AbstractFloat}
+    verbosity::Symbol
+    visualize::Bool
+    save_results::Bool
+end
+
+function Base.show(io::IO, config::ExperimentConfig)
+    println(io, "ExperimentConfig:")
+    println(io, "grid_size=$(config.grid_size), ")
+    println(io, "time_horizon=$(config.time_horizon), ")
+    println(io, "n_episodes=$(config.n_episodes), ")
+    println(io, "n_iterations=$(config.n_iterations), ")
+    println(io, "wait_time=$(config.wait_time), ")
+    println(io, "number_type=$(config.number_type), ")
+    println(io, "verbosity=$(config.verbosity), ")
+    println(io, "visualize=$(config.visualize), ")
+    println(io, "save_results=$(config.save_results)")
+end
+"""
+    validate_parameters(grid_size, time_horizon, n_episodes)
+
+Validate the experiment parameters and throw an error if they are invalid.
+"""
+function validate_parameters(grid_size, time_horizon, n_episodes)
+    grid_size > 0 || throw(ArgumentError("grid_size must be positive"))
+    time_horizon > 0 || throw(ArgumentError("time_horizon must be positive"))
+    n_episodes > 0 || throw(ArgumentError("n_episodes must be positive"))
+end
+
+"""
+    load_tensors(grid_size)
+
+Load the required tensors for the experiment.
+"""
+function load_tensors(grid_size)
+    @info "Loading tensors for grid size $grid_size"
+
+    observation_tensors = EFEasVFE.load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/")
+    door_key_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor")
+    location_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor")
+    # observation_tensors = collect.(eachslice(EFEasVFE.generate_observation_tensor(grid_size, Float32), dims=(1, 2)))
+    # door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, Float32)
+    # location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, Float32)
+    orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(Float32)
+
+    @debug "Tensors loaded successfully"
+
+    return (
+        observation=observation_tensors,
+        door_key=door_key_transition_tensor,
+        location=location_transition_tensor,
+        orientation=orientation_transition_tensor
     )
-    return JSON.parse(String(response.body))
 end
 
-function get_action_space()
-    response = HTTP.request("GET", "$API_URL/action_space")
-    return JSON.parse(String(response.body))
+"""
+    create_goal(grid_size, T::Type{<:AbstractFloat})
+
+Create the goal distribution for the experiment.
+"""
+function create_goal(grid_size, T::Type{<:AbstractFloat})
+    @debug "Creating goal distribution for grid size $grid_size"
+    goal = zeros(T, grid_size^2) .+ tiny
+    goal[grid_size^2-grid_size+1] = one(T)
+    return Categorical(goal ./ sum(goal))
 end
 
-function run_minigrid_agent(model, loc_t_tensor, ori_t_tensor, door_t_tensor, key_t_tensor, observation_tensors, T, goal; n_episodes=1000, n_iterations=10, callbacks=nothing, wait_time=0.0)
-    rewards = zeros(n_episodes)
-    observations = keep(Any)
+"""
+    run_experiment(config::ExperimentConfig)
 
-    @showprogress for i in 1:n_episodes
-        # Reset environment
-        env_state = reset_environment()
+Run the minigrid experiment with the given configuration.
+"""
+function run_experiment(config::ExperimentConfig)
+    @info "Starting experiment" config
+    # Load tensors
+    tensors = load_tensors(config.grid_size)
 
-        # Initialize beliefs
-        p_old_location = vague(Categorical, grid_size^2)
-        p_old_orientation = vague(Categorical, 4)
-        p_key_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-        p_door_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-        p_old_key_state = Categorical([1 - tiny, tiny])
-        p_old_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
+    # Create goal
+    goal = create_goal(config.grid_size, config.number_type)
 
+    # Create agent configuration
+    agent_config = MinigridConfig(
+        grid_size=config.grid_size,
+        time_horizon=config.time_horizon,
+        n_episodes=config.n_episodes,
+        n_iterations=config.n_iterations,
+        wait_time=config.wait_time,
+        number_type=config.number_type
+    )
 
-        reward = 0.0
+    # Run KL control agent
+    @info "Running KL control agent"
+    m_kl, s_kl = run_minigrid_agent(
+        klcontrol_minigrid_agent,
+        tensors,
+        agent_config,
+        goal;
+    )
 
-        # Initial action (Turn left)
-        next_action = Int(TURN_LEFT)
-        env_state = step_environment(next_action)
-        reward += env_state["reward"]
-        sleep(wait_time)
+    @info "Experiment completed" mean_reward = m_kl std_reward = s_kl
 
-        # Run episode
-        for t in 1:T-1
-            # Get current observation
-            current_obs = env_state["observation"]
-
-            # Create observation tensor
-            obs_tensor = fill(zeros(5), 7, 7)
-            for x in 1:7, y in 1:7
-                # Map from environment indices to our CellType indices
-                cell_idx = if current_obs["image"][x][y][1] == 0  # unseen
-                    Int(INVISIBLE)
-                elseif current_obs["image"][x][y][1] == 1  # empty
-                    Int(EMPTY)
-                elseif current_obs["image"][x][y][1] == 2  # wall
-                    Int(WALL)
-                elseif current_obs["image"][x][y][1] == 4  # door
-                    Int(DOOR)
-                elseif current_obs["image"][x][y][1] == 5  # key
-                    Int(KEY)
-                else  # Default to empty for other cases
-                    Int(EMPTY)
-                end
-                # Create a fresh zero vector for each cell
-                obs_tensor[x, y] = zeros(5)
-                # Set only the corresponding index to 1.0
-                obs_tensor[x, y][cell_idx] = 1.0
-            end
-
-            orientation = zeros(4)
-            orientation[current_obs["direction"]+1] = 1.0
-
-            # Create previous action vector
-            previous_action = zeros(5)
-            previous_action[next_action] = 1.0
-
-            # Run inference
-            result = infer(
-                model=model(
-                    p_old_location=p_old_location,
-                    p_old_orientation=p_old_orientation,
-                    p_key_location=p_key_location,
-                    p_door_location=p_door_location,
-                    p_old_key_state=p_old_key_state,
-                    p_old_door_state=p_old_door_state,
-                    loc_t_tensor=loc_t_tensor,
-                    ori_t_tensor=ori_t_tensor,
-                    door_t_tensor=door_t_tensor,
-                    key_t_tensor=key_t_tensor,
-                    observation_tensors=observation_tensors,
-                    T=T - t,
-                    goal=goal
-                ),
-                data=(
-                    observations=obs_tensor,
-                    action=previous_action,
-                    orientation_observation=orientation
-                ),
-                callbacks=(after_iteration=after_iteration_callback,),
-                iterations=n_iterations,
-                initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_door_state, p_old_key_state, p_door_location, p_key_location)
-            )
-
-            # Take action
-            next_action = mode(first(last(result.posteriors[:u])))
-            # Transform action from our enum (1-5) to environment action (0-6)
-            env_action = if next_action == Int(TURN_LEFT)
-                0  # left
-            elseif next_action == Int(TURN_RIGHT)
-                1  # right
-            elseif next_action == Int(FORWARD)
-                2  # forward
-            elseif next_action == Int(PICKUP)
-                3  # pickup
-            elseif next_action == Int(OPEN_DOOR)
-                5  # toggle/open
-            else
-                error("Invalid action")
-            end
-            @show env_action, next_action
-            env_state = step_environment(env_action)
-            reward += env_state["reward"]
-            if env_state["reward"] > 0
-                break
-            end
-            sleep(wait_time)
-
-            # Update beliefs for next step
-            p_old_location = last(result.posteriors[:current_location])
-            p_old_orientation = last(result.posteriors[:current_orientation])
-            p_old_key_state = last(result.posteriors[:current_key_state])
-            p_old_door_state = last(result.posteriors[:current_door_state])
-            p_key_location = last(result.posteriors[:key_location])
-            p_door_location = last(result.posteriors[:door_location])
-        end
-        rewards[i] = reward
+    # Save results if requested
+    if config.save_results
+        save_results(config, m_kl, s_kl)
     end
-    return mean(rewards), std(rewards)
+
+    return m_kl, s_kl
 end
 
-# Set up environment parameters
-grid_size = 4
-T = 17
+"""
+    save_results(config::ExperimentConfig, mean_reward::Float64, std_reward::Float64)
 
-# Generate tensors
-observation_tensors = generate_observation_tensor(grid_size) .+ tiny;
-door_st_t = get_door_state_transition_tensor(grid_size) .+ tiny;
-ori_st_t = get_orientation_transition_tensor() .+ tiny;
-loc_st_t = get_self_transition_tensor(grid_size) .+ tiny;
-key_st_t = get_key_state_transition_tensor(grid_size) .+ tiny;
+Save experiment results to disk.
+"""
+function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward::Float64)
+    timestamp = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")
+    results = Dict(
+        "timestamp" => timestamp,
+        "grid_size" => config.grid_size,
+        "time_horizon" => config.time_horizon,
+        "n_episodes" => config.n_episodes,
+        "n_iterations" => config.n_iterations,
+        "mean_reward" => mean_reward,
+        "std_reward" => std_reward
+    )
 
-# Set goal (bottom right corner)
-goal = zeros(grid_size^2) .+ tiny
-goal[grid_size^2-grid_size+1] = 1.0
-goal = Categorical(goal ./ sum(goal))
+    results_file = datadir("results", "minigrid_$(timestamp).jld2")
+    mkpath(dirname(results_file))
+    @save results_file results
 
-# Run experiments
-callbacks = RxInferBenchmarkCallbacks()
+    @info "Results saved to $results_file"
+end
 
-# Run KL control agent
-m_kl, s_kl = run_minigrid_agent(
-    klcontrol_minigrid_agent,
-    loc_st_t, ori_st_t, door_st_t, key_st_t, observation_tensors, T, goal;
-    n_episodes=3, n_iterations=50, wait_time=0.0, callbacks=callbacks
-)
-@show m_kl, s_kl
+"""
+    parse_command_line()
 
-# Run EFE agent (if implemented)
-# m_efe, s_efe = run_minigrid_agent(
-#     efe_minigrid_agent,
-#     p_old_location, p_old_orientation, p_key_location, p_door_location,
-#     p_old_key_state, p_old_door_state, loc_st_t, ori_st_t,
-#     door_st_t, key_st_t, observation_tensors, T, goal;
-#     n_episodes=1000, n_iterations=3, wait_time=0.0
-# )
-# @show m_efe, s_efe
+Parse command line arguments for the experiment.
+"""
+function parse_command_line()
+    s = ArgParseSettings()
+    s.description = "Run minigrid experiment with specified parameters"
+    s.version = "1.0.0"
 
-# Run visualization
-# env_state = reset_environment()
-# run_minigrid_agent(
-#     klcontrol_minigrid_agent,
-#     p_old_location, p_old_orientation, p_key_location, p_door_location,
-#     p_old_key_state, p_old_door_state, loc_st_t, ori_st_t,
-#     door_st_t, key_st_t, observation_tensors, T, goal;
-#     n_episodes=1, n_iterations=3, wait_time=1.0
-# )
-
-
-
-# Test single inference step
-env_state = reset_environment()
-
-# Initial action (Turn left) 
-next_action = Int(TURN_LEFT)
-env_state = step_environment(0)
-
-# Get current observation
-current_obs = env_state["observation"]
-
-# Create observation tensor
-obs_tensor = fill(zeros(5), 7, 7)
-for x in 1:7, y in 1:7
-    # Map from environment indices to our CellType indices
-    cell_idx = if current_obs["image"][x][y][1] == 0  # unseen
-        Int(INVISIBLE)
-    elseif current_obs["image"][x][y][1] == 1  # empty
-        Int(EMPTY)
-    elseif current_obs["image"][x][y][1] == 2  # wall
-        Int(WALL)
-    elseif current_obs["image"][x][y][1] == 4  # door
-        Int(DOOR)
-    elseif current_obs["image"][x][y][1] == 5  # key
-        Int(KEY)
-    else  # Default to empty for other cases
-        Int(EMPTY)
+    @add_arg_table! s begin
+        "--grid-size"
+        help = "Size of the grid (default: 3)"
+        arg_type = Int
+        default = 3
+        "--time-horizon"
+        help = "Maximum number of steps per episode (default: 15)"
+        arg_type = Int
+        default = 15
+        "--n-episodes"
+        help = "Number of episodes to run (default: 10)"
+        arg_type = Int
+        default = 10
+        "--n-iterations"
+        help = "Number of iterations per step (default: 70)"
+        arg_type = Int
+        default = 70
+        "--wait-time"
+        help = "Time to wait between steps in seconds (default: 0.0)"
+        arg_type = Float64
+        default = 0.0
+        "--number-type"
+        help = "Number type to use (default: Float32)"
+        arg_type = Symbol
+        default = :Float32
+        "--visualize"
+        help = "Enable visualization"
+        action = :store_true
+        "--save-results"
+        help = "Save experiment results"
+        action = :store_true
+        "--verbosity"
+        help = "Logging verbosity level (debug, info, warn) (default: info)"
+        arg_type = Symbol
+        default = :info
     end
-    # Create a fresh zero vector for each cell
-    obs_tensor[x, y] = zeros(5) .+ tiny
-    # Set only the corresponding index to 1.0
-    obs_tensor[x, y][cell_idx] = 1.0
+
+    args = parse_args(s)
+
+    # Validate parameters
+    validate_parameters(args["grid-size"], args["time-horizon"], args["n-episodes"])
+
+    # Convert number type string to actual type
+    number_type = if args["number-type"] == :Float32
+        Float32
+    elseif args["number-type"] == :Float64
+        Float64
+    else
+        throw(ArgumentError("Unsupported number type: $(args["number-type"])"))
+    end
+
+    return (
+        grid_size=args["grid-size"],
+        time_horizon=args["time-horizon"],
+        n_episodes=args["n-episodes"],
+        n_iterations=args["n-iterations"],
+        wait_time=args["wait-time"],
+        number_type=number_type,
+        verbosity=args["verbosity"],
+        visualize=args["visualize"],
+        save_results=args["save-results"]
+    )
 end
 
-orientation = zeros(4) .+ tiny
-orientation[current_obs["direction"]+1] = 1.0
+function main()
+    # Parse command line arguments
+    args = parse_command_line()
 
-# Create previous action vector
-previous_action = zeros(5) .+ tiny
-previous_action[next_action] = 1.0
+    # Set up logging
+    setup_logging(args.verbosity)
 
-p_old_location = vague(Categorical, grid_size^2)
-p_old_orientation = vague(Categorical, 4)
-p_key_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-p_door_location = vague(Categorical, grid_size^2 - 2 * grid_size)
-p_old_key_state = Categorical([1 - tiny, tiny])
-p_old_door_state = Categorical([1 - 2 * tiny, tiny, tiny])
+    # Set up experiment parameters
+    config = ExperimentConfig(
+        grid_size=args.grid_size,
+        time_horizon=args.time_horizon,
+        n_episodes=args.n_episodes,
+        n_iterations=args.n_iterations,
+        wait_time=args.wait_time,
+        number_type=args.number_type,
+        verbosity=args.verbosity,
+        visualize=args.visualize,
+        save_results=args.save_results
+    )
 
-T = 20
+    # Run experiment
+    mean_reward, std_reward = run_experiment(config)
 
-# Run single inference step
-# Run inference
-result = infer(
-    model=klcontrol_minigrid_agent(
-        p_old_location=p_old_location,
-        p_old_orientation=p_old_orientation,
-        p_key_location=p_key_location,
-        p_door_location=p_door_location,
-        p_old_key_state=p_old_key_state,
-        p_old_door_state=p_old_door_state,
-        loc_t_tensor=loc_st_t,
-        ori_t_tensor=ori_st_t,
-        door_t_tensor=door_st_t,
-        key_t_tensor=key_st_t,
-        observation_tensors=observation_tensors,
-        T=T,
-        goal=goal
-    ),
-    data=(
-        observations=obs_tensor,
-        action=previous_action,
-        orientation_observation=orientation
-    ),
-    callbacks=(after_iteration=after_iteration_callback,),
-    iterations=80,
-    initialization=klcontrol_minigrid_agent_initialization(grid_size, p_old_location, p_old_orientation, p_old_door_state, p_old_key_state, p_door_location, p_key_location),
-    showprogress=true,
-    free_energy=true
-)
+    # Visualize if requested
+    if args.visualize
+        @info "Running visualization"
+        visualize_episode(config)
+    end
+end
 
-# Print posteriors
-@show result.posteriors[:current_location]
-@show result.posteriors[:current_orientation]
-@show result.posteriors[:current_key_state]
-@show result.posteriors[:current_door_state]
-@show result.posteriors[:key_location]
-@show result.posteriors[:door_location]
+function visualize_episode(config::ExperimentConfig)
+    # Create visualization config
+    viz_config = MinigridConfig(
+        grid_size=config.grid_size,
+        time_horizon=config.time_horizon,
+        n_episodes=1,
+        n_iterations=3,
+        wait_time=1.0,
+        number_type=config.number_type
+    )
 
-using RxEnvironmentsZoo.GLMakie
+    # Load required data
+    tensors = load_tensors(config.grid_size)
+    goal = create_goal(config.grid_size, config.number_type)
+    callbacks = RxInferBenchmarkCallbacks()
 
-# Extract free energy values
-fe_values = result.free_energy
+    # Run visualization
+    run_minigrid_agent(
+        klcontrol_minigrid_agent,
+        tensors,
+        viz_config,
+        goal;
+        callbacks=callbacks
+    )
+end
 
-# Create figure and plot
-fig = Figure()
-ax = Axis(fig[1, 1],
-    xlabel="Iteration",
-    ylabel="Free Energy",
-    title="Free Energy During Inference")
+# Run main function if script is run directly
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
 
-# Plot free energy curve
-lines!(ax, 1:(length(fe_values)-5), fe_values[6:end])
 
-# Display the figure
-display(fig)

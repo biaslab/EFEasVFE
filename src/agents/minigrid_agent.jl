@@ -124,7 +124,8 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             key_door_transition_tensor=tensors.door_key,
             observation_tensors=tensors.observation,
             T=time_remaining,
-            goal=goal
+            goal=goal,
+            number_type=config.number_type
         ),
         data=(
             observations=obs_tensor,
@@ -139,7 +140,8 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             beliefs.orientation,
             beliefs.key_door_state,
             beliefs.door_location,
-            beliefs.key_location
+            beliefs.key_location,
+            config.number_type
         )
     )
 

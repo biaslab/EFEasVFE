@@ -99,16 +99,13 @@ end
 
 Load the required tensors for the experiment.
 """
-function load_tensors(grid_size)
+function load_tensors(grid_size, number_type)
     @info "Loading tensors for grid size $grid_size"
 
-    observation_tensors = EFEasVFE.load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/")
-    door_key_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor")
-    location_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor")
-    # observation_tensors = collect.(eachslice(EFEasVFE.generate_observation_tensor(grid_size, Float32), dims=(1, 2)))
-    # door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, Float32)
-    # location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, Float32)
-    orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(Float32)
+    observation_tensors = EFEasVFE.load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/", float_type=number_type)
+    door_key_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor", float_type=number_type)
+    location_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor", float_type=number_type)
+    orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(number_type)
 
     @debug "Tensors loaded successfully"
 
@@ -140,7 +137,7 @@ Run the minigrid experiment with the given configuration.
 function run_experiment(config::ExperimentConfig)
     @info "Starting experiment" config
     # Load tensors
-    tensors = load_tensors(config.grid_size)
+    tensors = load_tensors(config.grid_size, config.number_type)
 
     # Create results directory
     mkpath(datadir("results", config.experiment_name))
@@ -311,6 +308,8 @@ function parse_command_line()
         Float32
     elseif args["number-type"] == :Float64
         Float64
+    elseif args["number-type"] == :Float16
+        Float16
     else
         throw(ArgumentError("Unsupported number type: $(args["number-type"])"))
     end

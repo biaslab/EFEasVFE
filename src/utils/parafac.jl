@@ -40,6 +40,7 @@ end
 
 Base.size(cp::CPTensor) = cp.dims
 Base.size(cp::CPTensor, d::Int) = cp.dims[d]
+Base.zero(::Type{CPTensor{T,N}}) where {T,N} = zero(T)
 rank(cp::CPTensor) = cp.rank
 
 function find_missing_mode(modes::NTuple{N,Int}, n::Int) where {N}

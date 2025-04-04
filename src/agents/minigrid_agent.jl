@@ -6,6 +6,8 @@ using ProgressMeter
 using NPZ
 import RxInfer: Categorical
 using StableRNGs
+using VideoIO
+using Colors  # Add Colors.jl for RGB{N0f8} support
 
 export MinigridConfig, run_minigrid_agent, create_observation_tensor, convert_action
 
@@ -18,6 +20,8 @@ Base.@kwdef struct MinigridConfig{T<:AbstractFloat}
     number_type::Type{T}
     visualize::Bool
     seed::Int
+    record_episode::Bool = false  # Default to false
+    experiment_name::String
 end
 
 Base.@kwdef mutable struct MinigridBeliefs{T<:AbstractFloat}
@@ -95,7 +99,7 @@ end
 function execute_initial_action(grid_size::Int)
     next_action = Int(TURN_LEFT)
     env_state = step_environment(next_action)
-    return env_state["reward"]
+    return env_state
 end
 
 function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining)
@@ -155,20 +159,125 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     return next_action, env_state
 end
 
-function run_single_episode(model, tensors, config, goal, callbacks, rng)
-    # Reinitialize environment with correct grid size
+"""
+    convert_frame(frame_list)
+
+Convert a frame from a nested list structure [[[r,g,b]]] to a 3D UInt8 array.
+The input frame_list has the structure:
+- Outer list: height
+- Middle list: width
+- Inner list: RGB values
+
+Returns a (height, width, 3) UInt8 array.
+"""
+function convert_frame(frame_list)
+    isempty(frame_list) && throw(ArgumentError("Empty frame"))
+
+    height = length(frame_list)
+    width = length(frame_list[1])
+
+    # Verify consistent dimensions
+    all(length(row) == width for row in frame_list) ||
+        throw(ArgumentError("Inconsistent row lengths"))
+    all(all(length(pixel) == 3 for pixel in row) for row in frame_list) ||
+        throw(ArgumentError("Invalid pixel format"))
+
+    # Create output array
+    result = Array{UInt8}(undef, height, width, 3)
+
+    # Copy values
+    for i in 1:height, j in 1:width, k in 1:3
+        result[i, j, k] = UInt8(frame_list[i][j][k])
+    end
+
+    return result
+end
+
+"""
+    record_episode_to_video(frames::Vector{Array{UInt8, 3}}, video_path::String="episode_recording.mp4")
+
+Save a sequence of frames to a video file.
+"""
+function record_episode_to_video(frames::Vector{Array{UInt8,3}}, video_path::String="episode_recording.mp4")
+    if isempty(frames)
+        @warn "No frames to record"
+        return
+    end
+
+    # Convert UInt8 arrays to RGB{N0f8} arrays
+    height, width, _ = size(frames[1])
+    rgb_frames = [RGB{Colors.N0f8}.(frames[i][:, :, 1] ./ 255, frames[i][:, :, 2] ./ 255, frames[i][:, :, 3] ./ 255)
+                  for i in 1:length(frames)]
+
+    # Set up encoder options
+    encoder_options = (crf=23, preset="medium")
+    framerate = 5
+
+    # Save video using VideoIO.save
+    VideoIO.save(video_path, rgb_frames;
+        framerate=framerate,
+        encoder_options=encoder_options
+    )
+
+    @info "Episode recorded to $video_path"
+end
+
+"""
+    run_single_episode(model, tensors, config, goal, callbacks, rng; record=false)
+
+Run a single episode of the minigrid environment.
+
+# Arguments
+- `model`: The agent model to use
+- `tensors`: Named tuple of required transition tensors
+- `config`: Configuration parameters
+- `goal`: Goal distribution
+- `callbacks`: Optional callback functions
+- `rng`: Random number generator
+- `record`: Whether to record the episode to video
+
+# Returns
+- The total reward for the episode
+"""
+function run_single_episode(model, tensors, config, goal, callbacks, rng; record=false)
+    # Ensure we use rgb_array render mode if recording
+    render_mode = if record
+        "rgb_array"
+    else
+        config.visualize ? "human" : "rgb_array"
+    end
+
     episode_seed = rand(rng, UInt32)
-    env_state = reinitialize_environment(config.grid_size + 2, render_mode=config.visualize ? "human" : "rgb_array", seed=episode_seed)
+    env_state = reinitialize_environment(config.grid_size + 2, render_mode=render_mode, seed=episode_seed)
+
+    # Initialize frames collection if recording
+    frames = record ? Vector{Array{UInt8,3}}() : nothing
+
     beliefs = initialize_beliefs(config.grid_size, config.number_type)
-    reward = execute_initial_action(config.grid_size)
+    reward = 0
+    env_state = execute_initial_action(config.grid_size)
     action = 1
+
+    # Store initial frame if recording
+    if record
+        push!(frames, convert_frame(env_state["frame"]))
+    end
 
     for t in config.time_horizon:-1:1
         action, env_state = execute_step(env_state, action, beliefs, model, tensors, config, goal, callbacks, t)
-        step_reward = env_state["reward"]
-        reward += step_reward
-        step_reward > 0 && break
+        reward += env_state["reward"]
+
+        if record
+            push!(frames, convert_frame(env_state["frame"]))
+        end
+
+        env_state["terminated"] && break
         sleep(config.wait_time)
+    end
+
+    # Save video if recording
+    if record && !isnothing(frames)
+        record_episode_to_video(frames, datadir("results", config.experiment_name, "episode_$(config.n_episodes).mp4"))
     end
 
     return reward
@@ -202,8 +311,14 @@ function run_minigrid_agent(
     validate_config(config)
     rewards = zeros(config.n_episodes)
     rng = StableRNG(config.seed)
+
     @showprogress for i in 1:config.n_episodes
-        rewards[i] = run_single_episode(model, tensors, config, goal, callbacks, rng)
+        # Record only the last episode if record_episode is true
+        should_record = config.record_episode && i == config.n_episodes
+        rewards[i] = run_single_episode(
+            model, tensors, config, goal, callbacks, rng;
+            record=should_record
+        )
     end
 
     return mean(rewards), std(rewards)

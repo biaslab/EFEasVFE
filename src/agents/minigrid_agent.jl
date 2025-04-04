@@ -125,7 +125,8 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             key_door_transition_tensor=tensors.door_key,
             observation_tensors=tensors.observation,
             T=time_remaining,
-            goal=goal
+            goal=goal,
+            number_type=config.number_type
         ),
         data=(
             observations=obs_tensor,
@@ -140,7 +141,8 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             beliefs.orientation,
             beliefs.key_door_state,
             beliefs.door_location,
-            beliefs.key_location
+            beliefs.key_location,
+            config.number_type
         );
         inference_kwargs...  # Pass through any additional inference arguments
     )
@@ -263,7 +265,7 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng; record
     end
 
     for t in config.time_horizon:-1:1
-        action, env_state = execute_step(env_state, action, beliefs, model, tensors, config, goal, callbacks, t)
+        action, env_state, _ = execute_step(env_state, action, beliefs, model, tensors, config, goal, callbacks, t)
         reward += env_state["reward"]
 
         if record

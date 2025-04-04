@@ -13,7 +13,6 @@ include("models/stochastic_maze/efe.jl")
 include("utils/parafac.jl")
 include("utils/environment_communication.jl")
 include("rules/rules.jl")
-include("visualization/minigrid_visualization.jl")
 
 # Re-export commonly used functions
 export run_minigrid_agent, MinigridConfig, plot_free_energy, plot_posteriors,

@@ -102,7 +102,7 @@ function execute_initial_action(grid_size::Int)
     return env_state
 end
 
-function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining)
+function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining; inference_kwargs...)
     current_obs = env_state["observation"]
     obs_tensor = create_observation_tensor(current_obs, config.number_type)
 
@@ -112,6 +112,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     previous_action = zeros(config.number_type, 5)
     previous_action[executed_action] = one(config.number_type)
 
+    # Run inference with additional kwargs
     result = infer(
         model=model(
             p_old_location=beliefs.location,
@@ -124,8 +125,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             key_door_transition_tensor=tensors.door_key,
             observation_tensors=tensors.observation,
             T=time_remaining,
-            goal=goal,
-            number_type=config.number_type
+            goal=goal
         ),
         data=(
             observations=obs_tensor,
@@ -140,16 +140,13 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             beliefs.orientation,
             beliefs.key_door_state,
             beliefs.door_location,
-            beliefs.key_location,
-            config.number_type
-        )
+            beliefs.key_location
+        );
+        inference_kwargs...  # Pass through any additional inference arguments
     )
 
     next_action = mode(first(last(result.posteriors[:u])))
     env_action = convert_action(next_action)
-    @debug "Executing action: $next_action with environment encoding $env_action"
-    env_state = step_environment(env_action)
-    @debug "Received reward: $(env_state["reward"])"
 
     # Update beliefs
     beliefs.location = last(result.posteriors[:current_location])
@@ -158,7 +155,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     beliefs.key_location = last(result.posteriors[:key_location])
     beliefs.door_location = last(result.posteriors[:door_location])
 
-    return next_action, env_state
+    return next_action, env_action, result  # Return the inference result as well
 end
 
 """

@@ -1,7 +1,6 @@
 using RxInfer
 using TensorOperations
 using Tullio
-using RxEnvironmentsZoo.GLMakie
 import RxInfer: Categorical
 
 

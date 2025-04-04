@@ -1,10 +1,15 @@
 @testitem "MinigridAgent" begin
     using Test
     using EFEasVFE
+    using VideoIO
+    using FileIO
+    using RxInfer
+    using Colors  # Add Colors.jl for RGB{N0f8} support
+
     @testset "MinigridConfig" begin
         import EFEasVFE: validate_config
         # Test valid config
-        config = MinigridConfig(3, 10, 5, 3, 0.0, Float32)
+        config = MinigridConfig(3, 10, 5, 3, 0.0, Float32, false, 42, false, "test")
         @test config.grid_size == 3
         @test config.time_horizon == 10
         @test config.n_episodes == 5
@@ -13,11 +18,11 @@
         @test config.number_type == Float32
 
         # Test invalid configs
-        @test_throws ArgumentError validate_config(MinigridConfig(0, 10, 5, 3, 0.0, Float32))  # grid_size <= 0
-        @test_throws ArgumentError validate_config(MinigridConfig(3, 0, 5, 3, 0.0, Float32))   # time_horizon <= 0
-        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 0, 3, 0.0, Float32))  # n_episodes <= 0
-        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 5, 0, 0.0, Float32))  # n_iterations <= 0
-        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 5, 3, -1.0, Float32)) # wait_time < 0
+        @test_throws ArgumentError validate_config(MinigridConfig(0, 10, 5, 3, 0.0, Float32, false, 42, false, "test"))  # grid_size <= 0
+        @test_throws ArgumentError validate_config(MinigridConfig(3, 0, 5, 3, 0.0, Float32, false, 42, false, "test"))   # time_horizon <= 0
+        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 0, 3, 0.0, Float32, false, 42, false, "test"))  # n_episodes <= 0
+        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 5, 0, 0.0, Float32, false, 42, false, "test"))  # n_iterations <= 0
+        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 5, 3, -1.0, Float32, false, 42, false, "test")) # wait_time < 0
     end
 
     @testset "Cell Observation" begin
@@ -157,5 +162,126 @@
                 end
             end
         end
+    end
+
+    @testset "Frame Conversion" begin
+        import EFEasVFE: convert_frame
+
+        @testset "Basic frame conversion" begin
+            # Test conversion of a simple 3x3 RGB frame
+            frame_list = [[[1, 2, 3] for _ in 1:3] for _ in 1:3]
+            result = convert_frame(frame_list)
+
+            @test size(result) == (3, 3, 3)
+            @test eltype(result) == UInt8
+
+            # Verify the values are correctly placed
+            for i in 1:3, j in 1:3
+                @test result[i, j, :] == UInt8[1, 2, 3]
+            end
+        end
+
+        @testset "Different frame sizes" begin
+            # Test various frame sizes
+            sizes = [(2, 2), (4, 4), (7, 7), (10, 10)]
+            for (h, w) in sizes
+                frame_list = [[[1, 2, 3] for _ in 1:w] for _ in 1:h]
+                result = convert_frame(frame_list)
+
+                @test size(result) == (h, w, 3)
+                @test eltype(result) == UInt8
+            end
+        end
+
+        @testset "Edge cases" begin
+            # Test empty frame
+            @test_throws ArgumentError convert_frame([])
+
+            # Test frame with empty rows
+            @test_throws ArgumentError convert_frame([[[]], [[]], [[]]])
+
+            # Test frame with inconsistent row lengths
+            @test_throws ArgumentError convert_frame([[[1, 2, 3]], [[1, 2, 3], [1, 2, 3]], [[1, 2, 3]]])
+        end
+
+        @testset "Value range" begin
+            # Test conversion of values at boundaries
+            frame_list = [[[0, 127, 255] for _ in 1:3] for _ in 1:3]
+            result = convert_frame(frame_list)
+
+            @test all(result[:, :, 1] .== UInt8(0))
+            @test all(result[:, :, 2] .== UInt8(127))
+            @test all(result[:, :, 3] .== UInt8(255))
+        end
+    end
+
+    @testset "Video Recording" begin
+        import EFEasVFE: record_episode_to_video
+
+        # Create a temporary directory for test videos
+        test_dir = mktempdir()
+
+        @testset "Basic video recording" begin
+            # Create a sequence of test frames
+            frames = [rand(UInt8, 1080, 1920, 3) for _ in 1:5]
+            video_path = joinpath(test_dir, "test_video.mp4")
+
+            # Record the video
+            record_episode_to_video(frames, video_path)
+
+            # Verify the video file was created
+            @test isfile(video_path)
+
+            # Clean up
+            rm(video_path)
+        end
+
+        @testset "Empty frames" begin
+            # Test with empty frames vector
+            video_path = joinpath(test_dir, "empty_video.mp4")
+            record_episode_to_video(Array{UInt8,3}[], video_path)
+
+            # Verify no file was created
+            @test !isfile(video_path)
+        end
+
+        @testset "Different frame sizes" begin
+            # Test recording frames of different sizes
+            frames = [
+                rand(UInt8, 3, 3, 3),
+                rand(UInt8, 4, 4, 3),
+                rand(UInt8, 5, 5, 3)
+            ]
+            video_path = joinpath(test_dir, "varying_sizes.mp4")
+
+            # Should throw an error for inconsistent frame sizes
+            @test_throws ArgumentError record_episode_to_video(frames, video_path)
+        end
+
+        @testset "Invalid frame data" begin
+            # Test with invalid frame data
+            frames = [rand(Float32, 1080, 1920, 3) for _ in 1:3]  # Wrong element type
+            video_path = joinpath(test_dir, "invalid_frames.mp4")
+
+            @test_throws MethodError record_episode_to_video(frames, video_path)
+        end
+
+        @testset "Video quality settings" begin
+            # Test with different quality settings
+            frames = [rand(UInt8, 1080, 1920, 3) for _ in 1:3]
+            video_path = joinpath(test_dir, "high_quality.mp4")
+
+            # Record with high quality settings
+            record_episode_to_video(frames, video_path)
+
+            # Verify the video file was created
+            @test isfile(video_path)
+
+            # Clean up
+            rm(video_path)
+        end
+
+        # Clean up test directory
+        rm(test_dir, recursive=true)
     end
 end

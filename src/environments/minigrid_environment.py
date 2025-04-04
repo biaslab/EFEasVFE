@@ -9,14 +9,9 @@ from typing import Dict, Any
 # Initialize FastAPI app
 app = FastAPI()
 
-register(
-    id="MiniGrid-DoorKey-7x7-v0",
-    entry_point="minigrid.envs:DoorKeyEnv",
-    kwargs={"size": 7},
-)
 
 # Create environment
-env = gym.make("MiniGrid-DoorKey-5x5-v0", render_mode=None)
+env = gym.make("MiniGrid-DoorKey-5x5-v0", render_mode="rgb_array")
 
 # Initialize environment state
 observation, info = env.reset()
@@ -29,37 +24,51 @@ class GridSize(BaseModel):
     render_mode: str = "human"  # Default to human rendering
     seed: int = 42
 
-@app.get("/reset")
+def create_response_dict(observation, info, reward=0.0, terminated=False, truncated=False, frame=[]):
+    """Convert observation to serializable dictionary format.
+    
+    Args:
+        observation: Raw observation from environment
+        info: Additional info from environment
+        reward: Optional reward value from step
+        terminated: Optional termination flag from step
+        truncated: Optional truncation flag from step
+        frame: Optional frame from step
+    Returns:
+        dict: Serializable observation dictionary containing image, direction and optional step info
+    """
+    response = {
+        "observation": {
+            "image": observation["image"].tolist(),
+            "direction": int(observation["direction"])
+        },
+        "info": info,
+        "reward": reward,
+        "terminated": terminated,
+        "truncated": truncated,
+        "frame": frame
+    }       
+    return response
+
+@app.post("/reset")
 async def reset_environment():
-    """Reset the environment and return initial observation"""
     global observation, info
     observation, info = env.reset()
-    observation = {
-        "image": observation["image"].tolist(),
-        "direction": int(observation["direction"])
-    }
-    return {
-        "observation": observation,
-        "info": info
-    }
+    response = create_response_dict(observation, info)
+    return response
 
 @app.post("/step")
 async def step_environment(action: Action):
     """Take a step in the environment with the given action"""
     try:
         observation, reward, terminated, truncated, info = env.step(action.action)
+        if env.render_mode == "rgb_array":
+            frame = env.render().tolist()
+        else:
+            frame = []
         # Convert observation dictionary to serializable format
-        observation = {
-            "image": observation["image"].tolist(),
-            "direction": int(observation["direction"])
-        }
-        return {
-            "observation": observation,
-            "reward": reward,
-            "terminated": terminated,
-            "truncated": truncated,
-            "info": info
-        }
+        response = create_response_dict(observation, info, reward, terminated, truncated, frame)
+        return response
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -83,7 +92,7 @@ async def get_action_space():
 async def reinitialize_environment(grid_size: GridSize):
     """Reinitialize the environment with a new grid size and optional rendering mode"""
     new_grid_size = grid_size.grid_size
-    render_mode = grid_size.render_mode if grid_size.render_mode == "human" else None
+    render_mode = grid_size.render_mode if grid_size.render_mode in ["human", "rgb_array"] else None
     global env, observation, info
     try:
         # Create environment
@@ -94,13 +103,7 @@ async def reinitialize_environment(grid_size: GridSize):
         )
         env = gym.make(f"MiniGrid-DoorKey-{new_grid_size}x{new_grid_size}-v0", render_mode=render_mode)
         observation, info = env.reset(seed=grid_size.seed)
-        observation = {
-            "image": observation["image"].tolist(),
-            "direction": int(observation["direction"])
-        }
-        return {
-            "observation": observation,
-            "info": info
-        }
+        response = create_response_dict(observation, info)
+        return response
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

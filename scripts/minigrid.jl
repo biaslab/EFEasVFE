@@ -63,6 +63,8 @@ Base.@kwdef struct ExperimentConfig
     visualize::Bool
     save_results::Bool
     seed::Int
+    experiment_name::String = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")  # Default to timestamp
+    save_video::Bool = false  # Default to false
 end
 
 function Base.show(io::IO, config::ExperimentConfig)
@@ -76,8 +78,11 @@ function Base.show(io::IO, config::ExperimentConfig)
     println(io, "verbosity=$(config.verbosity), ")
     println(io, "visualize=$(config.visualize), ")
     println(io, "save_results=$(config.save_results), ")
-    println(io, "seed=$(config.seed)")
+    println(io, "seed=$(config.seed), ")
+    println(io, "experiment_name=$(config.experiment_name), ")
+    println(io, "save_video=$(config.save_video)")
 end
+
 """
     validate_parameters(grid_size, time_horizon, n_episodes)
 
@@ -137,6 +142,9 @@ function run_experiment(config::ExperimentConfig)
     # Load tensors
     tensors = load_tensors(config.grid_size)
 
+    # Create results directory
+    mkpath(datadir("results", config.experiment_name))
+
     # Create goal
     goal = create_goal(config.grid_size, config.number_type)
 
@@ -149,7 +157,9 @@ function run_experiment(config::ExperimentConfig)
         wait_time=config.wait_time,
         number_type=config.number_type,
         visualize=config.visualize,
-        seed=config.seed
+        seed=config.seed,
+        record_episode=config.save_video,
+        experiment_name=config.experiment_name
     )
 
     # Run KL control agent
@@ -187,11 +197,12 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
         "mean_reward" => mean_reward,
         "std_reward" => std_reward,
         "seed" => config.seed,
+        "experiment_name" => config.experiment_name,
         "model source" => GraphPPL.getsource(klcontrol_minigrid_agent())
     )
 
     # Save results in multiple formats
-    base_filename = "minigrid_$(timestamp)"
+    base_filename = config.experiment_name
     results_file = datadir("results", base_filename, base_filename * ".jld2")
     results_json = datadir("results", base_filename, base_filename * ".json")
     results_md = datadir("results", base_filename, base_filename * ".md")
@@ -209,6 +220,7 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
     - Number of Episodes: $(config.n_episodes)
     - Number of Iterations: $(config.n_iterations)
     - Seed: $(config.seed)
+    - Experiment Name: $(config.experiment_name)
     ## Results
     - Mean Reward: $(round(mean_reward, digits=3))
     - Standard Deviation: $(round(std_reward, digits=3))
@@ -280,6 +292,13 @@ function parse_command_line()
         help = "Random seed for the experiment"
         arg_type = Int
         default = 42
+        "--experiment-name"
+        help = "Name for the experiment (default: current timestamp)"
+        arg_type = String
+        default = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")
+        "--save-video"
+        help = "Save video of the last episode"
+        action = :store_true
     end
 
     args = parse_args(s)
@@ -296,6 +315,12 @@ function parse_command_line()
         throw(ArgumentError("Unsupported number type: $(args["number-type"])"))
     end
 
+    # Check for incompatible visualization and video saving options
+    if args["save-video"] && args["visualize"]
+        @warn "Video saving is not compatible with visualization mode. No video will be saved."
+        args["save-video"] = false
+    end
+
     return (
         grid_size=args["grid-size"],
         time_horizon=args["time-horizon"],
@@ -306,7 +331,9 @@ function parse_command_line()
         verbosity=args["verbosity"],
         visualize=args["visualize"],
         save_results=args["save-results"],
-        seed=args["seed"]
+        seed=args["seed"],
+        experiment_name=args["experiment-name"],
+        save_video=args["save-video"]
     )
 end
 
@@ -328,7 +355,9 @@ function main()
         verbosity=args.verbosity,
         visualize=args.visualize,
         save_results=args.save_results,
-        seed=args.seed
+        seed=args.seed,
+        experiment_name=args.experiment_name,
+        save_video=args.save_video
     )
 
     # Run experiment

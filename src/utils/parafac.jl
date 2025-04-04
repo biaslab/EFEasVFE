@@ -166,9 +166,9 @@ Parameters:
 Returns:
 - CPTensor: The loaded CP tensor
 """
-function load_cp_tensor(dir::AbstractString; T::Type=Float32)
+function load_cp_tensor(dir::AbstractString; float_type::Type=Float32)
     # Load weights
-    weights = npzread(joinpath(dir, "weights.npy"))
+    weights = float_type.(npzread(joinpath(dir, "weights.npy")))
 
     # Load all factor matrices
     factors = []
@@ -178,35 +178,15 @@ function load_cp_tensor(dir::AbstractString; T::Type=Float32)
         if !isfile(factor_path)
             break
         end
-        push!(factors, npzread(factor_path))
+        push!(factors, float_type.(npzread(factor_path)))
         i += 1
     end
 
     # Convert to NTuple for better performance
-    factors_tuple = NTuple{length(factors),Matrix{T}}(factors)
+    factors_tuple = NTuple{length(factors),Matrix{float_type}}(factors)
 
     # Create and return the CPTensor
     return CPTensor(weights, factors_tuple)
-end
-
-"""
-Load a CP tensor and its metadata from a directory.
-
-Parameters:
-- dir: Path to the directory containing the decomposition files
-- T: Type parameter for the tensor (default: Float64)
-
-Returns:
-- Tuple{CPTensor, Dict}: The loaded CP tensor and its metadata
-"""
-function load_cp_tensor_with_metadata(dir::AbstractString; T::Type=Float64)
-    # Load the tensor
-    tensor = load_cp_tensor(dir; T)
-
-    # Load metadata
-    metadata = npzread(joinpath(dir, "metadata.npy"))
-
-    return tensor, metadata
 end
 
 """
@@ -221,14 +201,14 @@ Parameters:
 Returns:
 - Matrix{CPTensor}: 7x7 matrix containing all observation tensors
 """
-function load_cp_observation_tensors(base_dir::String)
+function load_cp_observation_tensors(base_dir::String; float_type::Type=Float32)
     tensors = Matrix{CPTensor}(undef, 7, 7)
 
     for x in 1:7, y in 1:7
         dir_name = "observation_tensor_x$(x)_y$(y)"
         dir_path = joinpath(base_dir, dir_name)
         if isdir(dir_path)
-            tensors[x, y] = load_cp_tensor(dir_path)
+            tensors[x, y] = load_cp_tensor(dir_path; float_type=float_type)
         else
             error("Directory not found: $dir_path")
         end

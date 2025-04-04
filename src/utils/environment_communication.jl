@@ -102,14 +102,15 @@ Reinitialize the environment with a new grid size.
 # Throws
 - `EnvironmentError` if the reinitialize request fails
 """
-function reinitialize_environment(grid_size::Int; render_mode::String="human")
+function reinitialize_environment(grid_size::Int; render_mode::String="human", seed::UInt32=42)
     response = HTTP.request(
         "POST",
         "$API_URL/reinitialize",
         ["Content-Type" => "application/json"],
         JSON.json(Dict(
             "grid_size" => grid_size,
-            "render_mode" => render_mode
+            "render_mode" => render_mode,
+            "seed" => seed
         ))
     )
     return check_response(response)

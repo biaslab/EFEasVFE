@@ -8,7 +8,9 @@ using Dates
 using Statistics
 using ArgParse
 using TinyHugeNumbers
+using RxInfer.GraphPPL
 import RxInfer: Categorical
+using JSON
 using HTTP
 
 # Import the main package
@@ -60,6 +62,7 @@ Base.@kwdef struct ExperimentConfig
     verbosity::Symbol
     visualize::Bool
     save_results::Bool
+    seed::Int
 end
 
 function Base.show(io::IO, config::ExperimentConfig)
@@ -72,7 +75,8 @@ function Base.show(io::IO, config::ExperimentConfig)
     println(io, "number_type=$(config.number_type), ")
     println(io, "verbosity=$(config.verbosity), ")
     println(io, "visualize=$(config.visualize), ")
-    println(io, "save_results=$(config.save_results)")
+    println(io, "save_results=$(config.save_results), ")
+    println(io, "seed=$(config.seed)")
 end
 """
     validate_parameters(grid_size, time_horizon, n_episodes)
@@ -144,7 +148,8 @@ function run_experiment(config::ExperimentConfig)
         n_iterations=config.n_iterations,
         wait_time=config.wait_time,
         number_type=config.number_type,
-        visualize=config.visualize
+        visualize=config.visualize,
+        seed=config.seed
     )
 
     # Run KL control agent
@@ -180,11 +185,47 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
         "n_episodes" => config.n_episodes,
         "n_iterations" => config.n_iterations,
         "mean_reward" => mean_reward,
-        "std_reward" => std_reward
+        "std_reward" => std_reward,
+        "seed" => config.seed,
+        "model source" => GraphPPL.getsource(klcontrol_minigrid_agent())
     )
 
-    results_file = datadir("results", "minigrid_$(timestamp).jld2")
+    # Save results in multiple formats
+    base_filename = "minigrid_$(timestamp)"
+    results_file = datadir("results", base_filename, base_filename * ".jld2")
+    results_json = datadir("results", base_filename, base_filename * ".json")
+    results_md = datadir("results", base_filename, base_filename * ".md")
+
+    # Create JSON string with formatted results
+    json_str = JSON.json(results, 2)
+
+    # Create markdown report
+    md_content = """
+    # Minigrid Experiment Results
+
+    ## Experiment Configuration
+    - Grid Size: $(config.grid_size)
+    - Time Horizon: $(config.time_horizon) 
+    - Number of Episodes: $(config.n_episodes)
+    - Number of Iterations: $(config.n_iterations)
+    - Seed: $(config.seed)
+    ## Results
+    - Mean Reward: $(round(mean_reward, digits=3))
+    - Standard Deviation: $(round(std_reward, digits=3))
+
+    ## Timestamp
+    Experiment conducted at: $timestamp
+    Model source: 
+    ```
+    $(results["model source"])
+    ```
+    """
+
     mkpath(dirname(results_file))
+    # Write additional formats
+    write(results_json, json_str)
+    write(results_md, md_content)
+
     @save results_file results
 
     @info "Results saved to $results_file"
@@ -235,6 +276,10 @@ function parse_command_line()
         help = "Logging verbosity level (debug, info, warn) (default: info)"
         arg_type = Symbol
         default = :info
+        "--seed"
+        help = "Random seed for the experiment"
+        arg_type = Int
+        default = 42
     end
 
     args = parse_args(s)
@@ -260,7 +305,8 @@ function parse_command_line()
         number_type=number_type,
         verbosity=args["verbosity"],
         visualize=args["visualize"],
-        save_results=args["save-results"]
+        save_results=args["save-results"],
+        seed=args["seed"]
     )
 end
 
@@ -281,7 +327,8 @@ function main()
         number_type=args.number_type,
         verbosity=args.verbosity,
         visualize=args.visualize,
-        save_results=args.save_results
+        save_results=args.save_results,
+        seed=args.seed
     )
 
     # Run experiment

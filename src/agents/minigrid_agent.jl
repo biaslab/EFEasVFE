@@ -5,6 +5,7 @@ using JSON
 using ProgressMeter
 using NPZ
 import RxInfer: Categorical
+using StableRNGs
 
 export MinigridConfig, run_minigrid_agent, create_observation_tensor, convert_action
 
@@ -16,6 +17,7 @@ Base.@kwdef struct MinigridConfig{T<:AbstractFloat}
     wait_time::Float64
     number_type::Type{T}
     visualize::Bool
+    seed::Int
 end
 
 Base.@kwdef mutable struct MinigridBeliefs{T<:AbstractFloat}
@@ -153,9 +155,10 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     return next_action, env_state
 end
 
-function run_single_episode(model, tensors, config, goal, callbacks)
+function run_single_episode(model, tensors, config, goal, callbacks, rng)
     # Reinitialize environment with correct grid size
-    env_state = reinitialize_environment(config.grid_size + 2, render_mode=config.visualize ? "human" : "rgb_array")
+    episode_seed = rand(rng, UInt32)
+    env_state = reinitialize_environment(config.grid_size + 2, render_mode=config.visualize ? "human" : "rgb_array", seed=episode_seed)
     beliefs = initialize_beliefs(config.grid_size, config.number_type)
     reward = execute_initial_action(config.grid_size)
     action = 1
@@ -198,9 +201,9 @@ function run_minigrid_agent(
 )
     validate_config(config)
     rewards = zeros(config.n_episodes)
-
+    rng = StableRNG(config.seed)
     @showprogress for i in 1:config.n_episodes
-        rewards[i] = run_single_episode(model, tensors, config, goal, callbacks)
+        rewards[i] = run_single_episode(model, tensors, config, goal, callbacks, rng)
     end
 
     return mean(rewards), std(rewards)

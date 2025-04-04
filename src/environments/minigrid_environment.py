@@ -27,6 +27,7 @@ class Action(BaseModel):
 class GridSize(BaseModel):
     grid_size: int
     render_mode: str = "human"  # Default to human rendering
+    seed: int = 42
 
 @app.get("/reset")
 async def reset_environment():
@@ -92,7 +93,7 @@ async def reinitialize_environment(grid_size: GridSize):
             kwargs={"size": new_grid_size},
         )
         env = gym.make(f"MiniGrid-DoorKey-{new_grid_size}x{new_grid_size}-v0", render_mode=render_mode)
-        observation, info = env.reset()
+        observation, info = env.reset(seed=grid_size.seed)
         observation = {
             "image": observation["image"].tolist(),
             "direction": int(observation["direction"])

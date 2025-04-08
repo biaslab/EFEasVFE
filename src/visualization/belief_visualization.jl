@@ -26,15 +26,16 @@ function plot_belief_grid(belief_vector, grid_size; title="Belief Grid", kwargs.
         clim=(0, 1);
         kwargs...)
 
-    # Add grid lines
+    # Add grid lines at integer positions
     for i in 1:grid_size-1
         vline!(p, [i], color=:white, alpha=0.3, label=nothing)
         hline!(p, [i], color=:white, alpha=0.3, label=nothing)
     end
 
-    # Add coordinate annotations
+    # Add coordinate annotations at cell centers
     for i in 1:grid_size, j in 1:grid_size
-        annotate!(p, j - 0.5, i - 0.5, Plots.text("($(i),$(j))", :white, 8))
+        # Use i,j directly for cell centers
+        annotate!(p, j, i, Plots.text("($(i),$(j))", :white, 8))
     end
 
     return p
@@ -54,62 +55,44 @@ Create a comprehensive visualization of inference results.
 - A Plots.jl plot object
 """
 function plot_inference_results(inference_result, grid_size; save_path=nothing)
-    # Create a layout with multiple subplots
+    # Change to the same 2×2 layout used in belief_evolution
     layout = @layout [
-        grid(1, 2)     # Top row: Free energy and current location
-        grid(1, 3)     # Middle row: Future locations t+1, t+2, t+3
-        grid(1, 2)     # Bottom row: Orientation and key/door state
+        grid(1, 2)  # Top row: Free energy and location belief
+        grid(1, 2)  # Bottom row: Orientation and key/door state
     ]
 
-    plots = []
-
     # 1. Free Energy Plot
-    p_fe = Plots.plot(inference_result.free_energy,
+    p1 = Plots.plot(inference_result.free_energy,
         xlabel="Iteration",
         ylabel="Free Energy",
         title="Free Energy Progression",
         legend=false,
         linewidth=2)
-    push!(plots, p_fe)
 
     # 2. Current Location Belief
     current_loc = last(inference_result.posteriors[:current_location]).p
-    p_loc = plot_belief_grid(current_loc, grid_size, title="Current Location Belief")
-    push!(plots, p_loc)
+    p2 = plot_belief_grid(current_loc, grid_size, title="Current Location Belief")
 
-    # 3. Future Location Beliefs (if available)
-    future_states = [:s_future_1, :s_future_2, :s_future_3]
-    for (i, state) in enumerate(future_states)
-        if haskey(inference_result.posteriors, state)
-            future_loc = last(inference_result.posteriors[state]).p
-            p_future = plot_belief_grid(future_loc, grid_size, title="Location Belief t+$i")
-            push!(plots, p_future)
-        end
-    end
-
-    # 4. Orientation Belief
+    # 3. Orientation Belief
     orientation = last(inference_result.posteriors[:current_orientation]).p
-    p_orient = bar(["→", "↓", "←", "↑"],
+    p3 = bar(["→", "↓", "←", "↑"],
         orientation,
         title="Orientation Belief",
         legend=false,
         ylim=(0, 1))
-    push!(plots, p_orient)
 
-    # 5. Key/Door State Belief
+    # 4. Key/Door State Belief
     key_door = last(inference_result.posteriors[:current_key_door_state]).p
-    p_state = bar(["No key", "Has key", "Door open"],
+    p4 = bar(["No key", "Has key", "Door open"],
         key_door,
         title="Key/Door State Belief",
         legend=false,
         ylim=(0, 1))
-    push!(plots, p_state)
 
-    # Combine all plots
-    final_plot = Plots.plot(plots...,
+    # Combine plots using the same approach as belief_evolution
+    final_plot = Plots.plot(p1, p2, p3, p4,
         layout=layout,
-        size=(1200, 800),
-        margin=5Plots.mm)
+        size=(1000, 800))
 
     # Save if path provided
     if !isnothing(save_path)
@@ -185,27 +168,66 @@ end
 """
     animate_trajectory_belief(inference_result, grid_size; fps=2, save_path=nothing)
 
-Creates an animation showing how the agent's belief about its future trajectory evolves over time.
-The animation shows a heatmap for each predicted future timestep from the final inference iteration.
+Creates an animation showing how the agent's beliefs about its future trajectory evolves over time,
+including location, orientation, key/door state, and action probabilities for each timestep.
 """
 function animate_trajectory_belief(inference_result, grid_size; fps=2, save_path=nothing)
     # Get the final trajectory beliefs
     final_location_beliefs = last(inference_result.posteriors[:location])
+    final_orientation_beliefs = last(inference_result.posteriors[:orientation])
+    final_key_door_beliefs = last(inference_result.posteriors[:key_door_state])
+    action_probabilities = last(inference_result.posteriors[:u])
+
     n_timesteps = length(final_location_beliefs)
+
+    # Define labels for different states
+    action_names = ["Turn Left", "Turn Right", "Forward", "Pickup", "Open Door"]
+    orientation_names = ["→", "↓", "←", "↑"]
+    key_door_names = ["No key", "Has key", "Door open"]
 
     # Create animation
     anim = @animate for t in 1:n_timesteps
-        # Get probability distribution for this timestep
-        loc_probs = final_location_beliefs[t].p
+        # Create a 2×2 layout
+        l = @layout [
+            grid(1, 2)  # Top row: Location and Orientation
+            grid(1, 2)  # Bottom row: Key/Door State and Actions
+        ]
 
-        # Create heatmap
-        p = plot_belief_grid(
-            loc_probs,
+        # Top-left: Location belief
+        p1 = plot_belief_grid(
+            probvec(final_location_beliefs[t]),
             grid_size,
-            title="Predicted Location t+$(t-1)"
+            title="Location t+$(t-1)"
         )
 
-        Plots.plot!(p, size=(400, 400))
+        # Top-right: Orientation belief
+        p2 = bar(orientation_names,
+            probvec(final_orientation_beliefs[t]),
+            title="Orientation t+$(t-1)",
+            legend=false,
+            ylim=(0, 1))
+
+        # Bottom-left: Key/Door state
+        p3 = bar(key_door_names,
+            probvec(final_key_door_beliefs[t]),
+            title="Key/Door State t+$(t-1)",
+            legend=false,
+            ylim=(0, 1))
+
+        # Bottom-right: Action probabilities
+        p4 = bar(action_names,
+            probvec(action_probabilities[t]),
+            title="Action Probabilities t+$(t-1)",
+            rotation=45,  # Rotate x-axis labels
+            legend=false,
+            ylim=(0, 1))
+
+        # Combine all plots
+        Plots.plot(p1, p2, p3, p4,
+            layout=l,
+            size=(1000, 800),
+            plot_title="Belief Trajectory - Timestep $(t-1)"
+        )
     end
 
     # Save if path provided

@@ -46,7 +46,20 @@ import RxInfer: Categorical
     key_door_state[end] ~ Categorical(number_type[tiny, tiny, 1.0-2*tiny])
 end
 
+ReactiveMP.constrain_form(::PointMassFormConstraint, distribution::Categorical{T,V}) where {T,V} = begin
+    result = zeros(T, length(probvec(distribution)))
+    result[mode(distribution)] = 1
+    return PointMass(result)
+end
+
+@average_energy Categorical{P} where {P<:Real} (q_out::BayesBase.PointMass{Vector{Float64}}, q_p::BayesBase.PointMass{Vector{Float64}},) = begin
+    return -sum(mean(q_out) .* log.(probvec(q_p)))
+end
+
 @constraints function klcontrol_minigrid_agent_constraints()
+    # q(u, location, orientation, key_door_state, key_location, door_location) = q(u)q(location, orientation, key_door_state, key_location, door_location)
+    # q(u, current_location, current_orientation, current_key_door_state, key_location, door_location) = q(u)q(current_location, current_orientation, current_key_door_state, key_location, door_location)
+    # q(u)::PointMassFormConstraint()
 end
 
 @initialization function klcontrol_minigrid_agent_initialization(size, p_current_location, p_current_orientation, p_current_key_door_state, p_door_location, p_key_location, number_type)
@@ -63,4 +76,5 @@ end
     μ(old_location) = p_current_location
     μ(old_orientation) = p_current_orientation
     μ(old_key_door_state) = p_current_key_door_state
+    # q(u) = Categorical(fill(number_type(1 / 5), 5))
 end

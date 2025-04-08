@@ -39,7 +39,7 @@ function parse_command_line()
         "--number-type"
         help = "Number type to use (Float32 or Float64)"
         arg_type = String
-        default = "Float32"
+        default = "Float64"
         "--visualize"
         help = "Whether to visualize the environment"
         action = :store_true
@@ -52,6 +52,9 @@ function parse_command_line()
         action = :store_true
         "--save-animation"
         help = "Save an animation of belief evolution"
+        action = :store_true
+        "--parafac"
+        help = "Use PARAFAC decomposed tensors"
         action = :store_true
     end
 
@@ -103,12 +106,17 @@ end
 
 Load the required tensors for the experiment.
 """
-function load_tensors(grid_size, number_type)
+function load_tensors(grid_size, number_type; parafac_decomposition=false)
     @info "Loading tensors for grid size $grid_size"
-
-    observation_tensors = EFEasVFE.load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/", float_type=number_type)
-    door_key_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor", float_type=number_type)
-    location_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor", float_type=number_type)
+    if parafac_decomposition
+        observation_tensors = EFEasVFE.load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/", float_type=number_type)
+        door_key_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor", float_type=number_type)
+        location_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor", float_type=number_type)
+    else
+        observation_tensors = collect(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
+        door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type)
+        location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, number_type)
+    end
     orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(number_type)
 
     @debug "Tensors loaded successfully"
@@ -165,10 +173,19 @@ function main()
         render_mode=args["visualize"] ? "human" : "rgb_array",
         seed=UInt32(config.seed)
     )
+
+    # Create results directory with grid size, seed, iterations and parafac info
+    results_dir = mkpath(datadir("debug",
+        "grid$(config.grid_size)_seed$(config.seed)_iter$(config.n_iterations)_parafac$(args["parafac"])"
+    ))
     @info "Initialized environment"
     # Initialize beliefs and tensors
     beliefs = initialize_beliefs(config.grid_size, config.number_type)
-    tensors = load_tensors(config.grid_size, config.number_type)
+    tensors = load_tensors(
+        config.grid_size,
+        config.number_type;
+        parafac_decomposition=args["parafac"]  # Pass the flag value
+    )
     goal = create_goal(config.grid_size, config.number_type)
     @info "Initialized beliefs and tensors"
     # Execute initial action
@@ -179,7 +196,7 @@ function main()
     if args["save-frame"]
         frame = convert_frame(env_state["frame"])
         rgb_frame = RGB{N0f8}.(frame[:, :, 1] ./ 255, frame[:, :, 2] ./ 255, frame[:, :, 3] ./ 255)
-        save(datadir("debug", "initial_frame.png"), rgb_frame)
+        save(joinpath(results_dir, "initial_frame.png"), rgb_frame)
         @info "Saved initial frame"
     end
     @info "Starting inference..."
@@ -201,8 +218,6 @@ function main()
     @info "Inference completed"
     new_env_state = step_environment(env_action)
 
-    # Create results directory with timestamp
-    results_dir = mkpath(datadir("debug"))
 
     # Plot and save inference results
     @info "Plotting inference results..."

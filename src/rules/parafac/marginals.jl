@@ -29,18 +29,18 @@ RxInfer.ReactiveMP.sdtype(any::RxInfer.ReactiveMP.StandaloneDistributionNode) = 
 RxInfer.BayesBase.entropy(cp::CPTensorMarginal) = 0.0
 
 @average_energy ReactiveMP.DiscreteTransition (q_out::PointMass{Vector{T}}, q_in_T1_T2_T3_T4::CPTensorMarginal{T,6}, q_a::PointMass{CPTensor{T,6}},) where {T} = begin
-    return -tensor_vector_log_product_sum(q_a.point, q_in_T1_T2_T3_T4.incoming_msg)
+    return -complete_mode_product(q_a.point, q_in_T1_T2_T3_T4.incoming_msg)
 end
 
 
 @average_energy ReactiveMP.DiscreteTransition (q_out_in_T1_T2_T3_T4::CPTensorMarginal{T,6}, q_a::PointMass{CPTensor{T,6}},) where {T} = begin
-    return -tensor_vector_log_product_sum(q_a.point, q_out_in_T1_T2_T3_T4.incoming_msg)
+    return -complete_mode_product(q_a.point, q_out_in_T1_T2_T3_T4.incoming_msg)
 end
 
 @average_energy ReactiveMP.DiscreteTransition (q_out_in_T1_T2_T3_T4_T5::CPTensorMarginal{T,7}, q_a::PointMass{CPTensor{T,7}},) where {T} = begin
-    return -tensor_vector_log_product_sum(q_a.point, q_out_in_T1_T2_T3_T4_T5.incoming_msg)
+    return -complete_mode_product(q_a.point, q_out_in_T1_T2_T3_T4_T5.incoming_msg)
 end
 
 @average_energy ReactiveMP.DiscreteTransition (q_out_in_T1_T2_T3_T4::CPTensorMarginal{T,7}, q_a::PointMass{CPTensor{T,7}}, q_T5::PointMass{Vector{T}},) where {T} = begin
-    return -tensor_vector_log_product_sum(q_a.point, q_out_in_T1_T2_T3_T4.incoming_msg)
+    return -complete_mode_product(q_a.point, q_out_in_T1_T2_T3_T4.incoming_msg)
 end

@@ -73,7 +73,7 @@ function create_observation_tensor(current_obs, T::Type{<:AbstractFloat})
     return obs_tensor
 end
 
-function convert_action(next_action)
+function convert_action(next_action::Int)
     action_map = Dict(
         Int(TURN_LEFT) => 0,   # left
         Int(TURN_RIGHT) => 1,  # right
@@ -85,6 +85,8 @@ function convert_action(next_action)
         error("Invalid action: $next_action")
     end
 end
+
+convert_action(next_action::AbstractVector) = convert_action(argmax(next_action))
 
 function initialize_beliefs(grid_size, T::Type{<:AbstractFloat})
     return MinigridBeliefs(
@@ -133,6 +135,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             action=previous_action,
             orientation_observation=orientation
         ),
+        constraints=klcontrol_minigrid_agent_constraints(),
         callbacks=callbacks,
         iterations=config.n_iterations,
         initialization=klcontrol_minigrid_agent_initialization(

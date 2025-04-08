@@ -301,3 +301,45 @@ function tensor_vector_log_product_sum(cp::CPTensor{T,N},
 
     return result
 end
+
+"""
+Compute the complete inner product between a CP tensor and vectors for all modes.
+Returns a scalar value representing T ∘ (v₁⊗v₂⊗...⊗vₙ).
+
+Parameters:
+- cp: CPTensor structure
+- vectors: Tuple of vectors matching all tensor dimensions
+
+Returns:
+- Scalar result of the complete inner product
+"""
+function complete_mode_product(cp::CPTensor{T,N},
+    vectors::NTuple{N,AbstractVector{T}}) where {T<:AbstractFloat,N}
+
+    # Validate input dimensions
+    if length(vectors) != length(cp.dims)
+        throw(ArgumentError("Number of vectors ($(length(vectors))) must match tensor order ($(length(cp.dims)))"))
+    end
+    if any(length(v) != d for (v, d) in zip(vectors, cp.dims))
+        throw(ArgumentError("Vector dimensions must match tensor dimensions"))
+    end
+
+    # Initialize result
+    result = zero(T)
+
+    # For each rank-1 component
+    @inbounds for r in 1:cp.rank
+        # Start with the weight
+        temp = cp.weights[r]
+
+        # Multiply with the dot product for each mode
+        for mode in 1:N
+            temp *= dot(vectors[mode], view(cp.factors[mode], :, r))
+        end
+
+        # Add to result
+        result += temp
+    end
+
+    return result
+end

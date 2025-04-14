@@ -152,6 +152,9 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
 
     next_action = mode(first(last(result.posteriors[:u])))
     env_action = convert_action(next_action)
+    @debug "Executing action: $next_action with environment encoding $env_action"
+    env_state = step_environment(env_action)
+    @debug "Received reward: $(env_state["reward"])"
 
     # Update beliefs
     beliefs.location = last(result.posteriors[:current_location])
@@ -160,7 +163,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     beliefs.key_location = last(result.posteriors[:key_location])
     beliefs.door_location = last(result.posteriors[:door_location])
 
-    return next_action, env_action, result  # Return the inference result as well
+    return next_action, env_state, result  # Return the inference result as well
 end
 
 """

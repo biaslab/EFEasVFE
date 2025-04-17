@@ -14,6 +14,8 @@ include("utils/parafac.jl")
 include("utils/environment_communication.jl")
 include("rules/rules.jl")
 include("visualization/belief_visualization.jl")
+include("rules/sparse_array/struct.jl")
+include("rules/sparse_array/rules.jl")
 
 # Re-export commonly used functions
 export run_minigrid_agent, MinigridConfig, plot_free_energy, plot_posteriors,

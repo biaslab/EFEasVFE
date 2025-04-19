@@ -94,11 +94,6 @@ function print_debug_info(beliefs, env_state, action)
     for (i, p) in enumerate(beliefs.key_door_state.p)
         println("  $(states[i]): $(round(p, digits=3))")
     end
-
-    # Print action
-    println("\nSelected Action: ", action)
-    action_names = ["Turn Left", "Turn Right", "Forward", "Pickup", "Open Door"]
-    println("Action meaning: ", action_names[action+1])
 end
 
 """

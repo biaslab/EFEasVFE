@@ -1,5 +1,4 @@
 export SparseArray
-
 """
     SparseArray{T,N}
 
@@ -318,5 +317,5 @@ function sparse_tensor_marginalize_6d(
         out[idx[out_dim]] += prob
     end
 
-    return Categorical(normalize!(out, 1))
+    return Categorical(normalize!(relu.(out), 1))
 end

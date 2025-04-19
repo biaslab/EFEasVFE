@@ -15,9 +15,11 @@ JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 NPZ = "15e1cf62-19b3-5cfa-8e77-841668bca605"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+
 ReactiveMP = "a194aa59-28ba-4574-a09c-4a745416d6e3"
 RxEnvironments = "5ea003d0-0c30-4e5c-84d5-cc22d8d83890"
 RxInfer = "86711068-29c9-4ff7-b620-ae75d7495b3d"
@@ -29,6 +31,8 @@ Tullio = "bc48ee85-29a4-5162-ae0b-a64e1601d4bc"
 VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 
 [compat]
+LoopVectorization = "0.12.172"
+Random = "1.11.0"
 RxEnvironments = "0.2"
 RxInfer = "4.0"
 julia = "1.10"
@@ -36,6 +40,7 @@ julia = "1.10"
 [extras]
 ReTestItems = "817f1d60-ba6b-4fd5-9520-3cf149f6a823"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [targets]
-test = ["Test", "ReTestItems"]
+test = ["Test", "Random", "ReTestItems"]

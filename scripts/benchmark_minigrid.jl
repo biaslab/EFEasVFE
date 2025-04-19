@@ -25,11 +25,11 @@ function parse_command_line()
         "--time-horizon"
         help = "Time horizon for planning"
         arg_type = Int
-        default = 10
+        default = 5
         "--iterations"
         help = "Number of iterations for inference"
         arg_type = Int
-        default = 3
+        default = 5
         "--number-type"
         help = "Number type to use (Float32 or Float64)"
         arg_type = String

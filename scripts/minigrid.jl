@@ -176,15 +176,15 @@ function run_experiment(config::ExperimentConfig)
         parallel=config.parallel  # Pass through parallel option
     )
 
-    # # Run KL control agent
-    # @info "Running KL control agent"
-    # m_kl, s_kl = run_minigrid_agent(
-    #     klcontrol_minigrid_agent,
-    #     tensors,
-    #     agent_config,
-    #     goal;
-    #     parallel=config.parallel            # Explicitly set parallel execution
-    # )
+    # Run KL control agent
+    @info "Running KL control agent"
+    m_kl, s_kl = run_minigrid_agent(
+        klcontrol_minigrid_agent,
+        tensors,
+        agent_config,
+        goal;
+        parallel=config.parallel            # Explicitly set parallel execution
+    )
 
     @info "Running EFE agent"
     m_efe, s_efe = run_minigrid_agent(
@@ -199,14 +199,14 @@ function run_experiment(config::ExperimentConfig)
             limit_stack_depth=500), # Force marginal computation
     )
 
-    @info "Experiment completed" mean_reward_efe = m_efe std_reward_efe = s_efe
+    @info "Experiment completed" mean_reward_kl = m_kl std_reward_kl = s_kl mean_reward_efe = m_efe std_reward_efe = s_efe
 
     # Save results if requested
     if config.save_results
-        save_results(config, m_efe, s_efe)
+        save_results(config, m_kl, s_kl, m_efe, s_efe)
     end
 
-    return m_kl, s_kl
+    return m_kl, s_kl, m_efe, s_efe
 end
 
 """
@@ -214,7 +214,7 @@ end
 
 Save experiment results to disk.
 """
-function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward::Float64)
+function save_results(config::ExperimentConfig, mean_reward_kl::Float64, std_reward_kl::Float64, mean_reward_efe::Float64, std_reward_efe::Float64)
     timestamp = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")
     results = Dict(
         "timestamp" => timestamp,
@@ -222,8 +222,10 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
         "time_horizon" => config.time_horizon,
         "n_episodes" => config.n_episodes,
         "n_iterations" => config.n_iterations,
-        "mean_reward" => mean_reward,
-        "std_reward" => std_reward,
+        "mean_reward_kl" => mean_reward_kl,
+        "std_reward_kl" => std_reward_kl,
+        "mean_reward_efe" => mean_reward_efe,
+        "std_reward_efe" => std_reward_efe,
         "seed" => config.seed,
         "experiment_name" => config.experiment_name,
         "model source" => GraphPPL.getsource(klcontrol_minigrid_agent()),
@@ -233,9 +235,9 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
 
     # Save results in multiple formats
     base_filename = config.experiment_name
-    results_file = datadir("results", base_filename, base_filename * ".jld2")
-    results_json = datadir("results", base_filename, base_filename * ".json")
-    results_md = datadir("results", base_filename, base_filename * ".md")
+    results_file = datadir("results", "minigrid", base_filename, base_filename * ".jld2")
+    results_json = datadir("results", "minigrid", base_filename, base_filename * ".json")
+    results_md = datadir("results", "minigrid", base_filename, base_filename * ".md")
 
     # Create JSON string with formatted results
     json_str = JSON.json(results, 2)

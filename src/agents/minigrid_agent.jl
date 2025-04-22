@@ -22,6 +22,7 @@ Base.@kwdef struct MinigridConfig{T<:AbstractFloat}
     seed::Int
     record_episode::Bool = false  # Default to false
     experiment_name::String
+    parallel::Bool = false  # Default to sequential execution
 end
 
 Base.@kwdef mutable struct MinigridBeliefs{T<:AbstractFloat}
@@ -31,8 +32,6 @@ Base.@kwdef mutable struct MinigridBeliefs{T<:AbstractFloat}
     key_location::Categorical{T}
     door_location::Categorical{T}
 end
-
-
 
 function validate_config(config::MinigridConfig)
     config.grid_size > 0 || throw(ArgumentError("grid_size must be positive"))
@@ -98,13 +97,13 @@ function initialize_beliefs(grid_size, T::Type{<:AbstractFloat})
     )
 end
 
-function execute_initial_action(grid_size::Int)
+function execute_initial_action(grid_size::Int, session_id::String)
     next_action = Int(TURN_LEFT)
-    env_state = step_environment(next_action)
+    env_state = step_environment(next_action, session_id)
     return env_state
 end
 
-function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining; inference_kwargs...)
+function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, session_id::String; inference_kwargs...)
     current_obs = env_state["observation"]
     obs_tensor = create_observation_tensor(current_obs, config.number_type)
 
@@ -153,7 +152,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     next_action = mode(first(last(result.posteriors[:u])))
     env_action = convert_action(next_action)
     @debug "Executing action: $next_action with environment encoding $env_action"
-    env_state = step_environment(env_action)
+    env_state = step_environment(env_action, session_id)
     @debug "Received reward: $(env_state["reward"])"
 
     # Update beliefs
@@ -255,39 +254,49 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng; record
     end
 
     episode_seed = rand(rng, UInt32)
-    env_state = reinitialize_environment(config.grid_size + 2, render_mode=render_mode, seed=episode_seed)
+    env_response = create_environment(config.grid_size + 2, render_mode=render_mode, seed=episode_seed)
+    session_id = env_response["session_id"]
 
-    # Initialize frames collection if recording
-    frames = record ? Vector{Array{UInt8,3}}() : nothing
+    try
+        # Initialize frames collection if recording
+        frames = record ? Vector{Array{UInt8,3}}() : nothing
 
-    beliefs = initialize_beliefs(config.grid_size, config.number_type)
-    reward = 0
-    env_state = execute_initial_action(config.grid_size)
-    action = 1
+        beliefs = initialize_beliefs(config.grid_size, config.number_type)
+        reward = 0
+        env_state = execute_initial_action(config.grid_size, session_id)
+        action = 1
 
-    # Store initial frame if recording
-    if record
-        push!(frames, convert_frame(env_state["frame"]))
-    end
-
-    for t in config.time_horizon:-1:1
-        action, env_state, _ = execute_step(env_state, action, beliefs, model, tensors, config, goal, callbacks, t)
-        reward += env_state["reward"]
-
+        # Store initial frame if recording
         if record
             push!(frames, convert_frame(env_state["frame"]))
         end
 
-        env_state["terminated"] && break
-        sleep(config.wait_time)
-    end
+        for t in config.time_horizon:-1:1
+            action, env_state, _ = execute_step(env_state, action, beliefs, model, tensors, config, goal, callbacks, t, session_id)
+            reward += env_state["reward"]
 
-    # Save video if recording
-    if record && !isnothing(frames)
-        record_episode_to_video(frames, datadir("results", config.experiment_name, "episode_$(config.n_episodes).mp4"))
-    end
+            if record
+                push!(frames, convert_frame(env_state["frame"]))
+            end
 
-    return reward
+            env_state["terminated"] && break
+            sleep(config.wait_time)
+        end
+
+        # Save video if recording
+        if record && !isnothing(frames)
+            record_episode_to_video(frames, datadir("results", config.experiment_name, "episode_$(config.n_episodes).mp4"))
+        end
+
+        return reward
+    finally
+        # Always clean up the environment session
+        try
+            close_environment(session_id)
+        catch e
+            @warn "Failed to close environment session: $e"
+        end
+    end
 end
 
 """
@@ -313,19 +322,75 @@ function run_minigrid_agent(
     tensors::NamedTuple,
     config::MinigridConfig,
     goal::Categorical;
-    callbacks=nothing
+    callbacks=nothing,
+    parallel::Union{Nothing,Bool}=nothing  # New keyword argument, defaults to config value if nothing
 )
     validate_config(config)
     rewards = zeros(config.n_episodes)
-    rng = StableRNG(config.seed)
 
-    @showprogress for i in 1:config.n_episodes
-        # Record only the last episode if record_episode is true
-        should_record = config.record_episode && i == config.n_episodes
-        rewards[i] = run_single_episode(
-            model, tensors, config, goal, callbacks, rng;
-            record=should_record
-        )
+    # Determine if we should use parallel execution
+    # If parallel keyword is provided, it overrides the config setting
+    use_parallel = isnothing(parallel) ? config.parallel : parallel
+
+    # Create a thread-safe RNG for each thread if running in parallel
+    if use_parallel
+        thread_count = Threads.nthreads()
+        @info "Running with parallelization using $thread_count threads"
+        thread_rngs = [StableRNG(config.seed + i) for i in 1:thread_count]
+
+        # Use Threads.@threads for parallelization
+        progress = Progress(config.n_episodes; desc="Running episodes: ")
+
+        Threads.@threads for i in 1:config.n_episodes
+            # Get the RNG for the current thread
+            thread_id = Threads.threadid()
+            thread_rng = thread_rngs[thread_id]
+
+            # Record only the last episode if record_episode is true
+            should_record = config.record_episode && i == config.n_episodes
+
+            # Turn off visualization for parallel execution except for the recording episode
+            local_config = config
+            if should_record && config.visualize
+                # Keep visualization for recording
+            elseif use_parallel && config.visualize
+                # Create a copy with visualization turned off
+                local_config = MinigridConfig(
+                    grid_size=config.grid_size,
+                    time_horizon=config.time_horizon,
+                    n_episodes=config.n_episodes,
+                    n_iterations=config.n_iterations,
+                    wait_time=config.wait_time,
+                    number_type=config.number_type,
+                    visualize=false,  # Turn off visualization for parallel execution
+                    seed=config.seed,
+                    record_episode=config.record_episode,
+                    experiment_name=config.experiment_name,
+                    parallel=use_parallel
+                )
+            end
+
+            rewards[i] = run_single_episode(
+                model, tensors, local_config, goal, callbacks, thread_rng;
+                record=should_record
+            )
+
+            # Update progress atomically
+            ProgressMeter.next!(progress)
+        end
+    else
+        # Sequential execution (old behavior)
+        @info "Running sequentially"
+        rng = StableRNG(config.seed)
+
+        @showprogress for i in 1:config.n_episodes
+            # Record only the last episode if record_episode is true
+            should_record = config.record_episode && i == config.n_episodes
+            rewards[i] = run_single_episode(
+                model, tensors, config, goal, callbacks, rng;
+                record=should_record
+            )
+        end
     end
 
     return mean(rewards), std(rewards)

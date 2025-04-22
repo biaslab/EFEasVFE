@@ -66,6 +66,7 @@ Base.@kwdef struct ExperimentConfig
     experiment_name::String = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")  # Default to timestamp
     save_video::Bool = false  # Default to false
     full_tensor::Bool = false
+    parallel::Bool = false    # Whether to use parallel execution
 end
 
 function Base.show(io::IO, config::ExperimentConfig)
@@ -83,6 +84,10 @@ function Base.show(io::IO, config::ExperimentConfig)
     println(io, "experiment_name=$(config.experiment_name), ")
     println(io, "save_video=$(config.save_video)")
     println(io, "full_tensor=$(config.full_tensor)")
+    println(io, "parallel=$(config.parallel)")
+    if config.parallel
+        println(io, "threads=", Threads.nthreads())
+    end
 end
 
 """
@@ -142,6 +147,11 @@ Run the minigrid experiment with the given configuration.
 """
 function run_experiment(config::ExperimentConfig)
     @info "Starting experiment" config
+
+    if config.parallel
+        @info "Using parallel execution with $(Threads.nthreads()) threads"
+    end
+
     # Load tensors
     tensors = load_tensors(config.grid_size, config.number_type; full_tensor=config.full_tensor)
 
@@ -162,7 +172,8 @@ function run_experiment(config::ExperimentConfig)
         visualize=config.visualize,
         seed=config.seed,
         record_episode=config.save_video,
-        experiment_name=config.experiment_name
+        experiment_name=config.experiment_name,
+        parallel=config.parallel  # Pass through parallel option
     )
 
     # Run KL control agent
@@ -172,6 +183,7 @@ function run_experiment(config::ExperimentConfig)
         tensors,
         agent_config,
         goal;
+        parallel=config.parallel            # Explicitly set parallel execution
     )
 
     @info "Experiment completed" mean_reward = m_kl std_reward = s_kl
@@ -201,7 +213,9 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
         "std_reward" => std_reward,
         "seed" => config.seed,
         "experiment_name" => config.experiment_name,
-        "model source" => GraphPPL.getsource(klcontrol_minigrid_agent())
+        "model source" => GraphPPL.getsource(klcontrol_minigrid_agent()),
+        "parallel" => config.parallel,
+        "thread_count" => config.parallel ? Threads.nthreads() : 1
     )
 
     # Save results in multiple formats
@@ -224,6 +238,8 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
     - Number of Iterations: $(config.n_iterations)
     - Seed: $(config.seed)
     - Experiment Name: $(config.experiment_name)
+    - Parallel Execution: $(config.parallel)
+    $(config.parallel ? "- Thread Count: $(Threads.nthreads())" : "")
     ## Results
     - Mean Reward: $(round(mean_reward, digits=3))
     - Standard Deviation: $(round(std_reward, digits=3))
@@ -305,6 +321,9 @@ function parse_command_line()
         "--full-tensor"
         help = "Materializes full tensors for transition and observation tensors"
         action = :store_true
+        "--parallel"
+        help = "Enable parallel execution of episodes using $(Threads.nthreads()) threads"
+        action = :store_true
     end
 
     args = parse_args(s)
@@ -342,7 +361,8 @@ function parse_command_line()
         seed=args["seed"],
         experiment_name=args["experiment-name"],
         save_video=args["save-video"],
-        full_tensor=args["full-tensor"]
+        full_tensor=args["full-tensor"],
+        parallel=args["parallel"]
     )
 end
 
@@ -367,7 +387,8 @@ function main()
         seed=args.seed,
         experiment_name=args.experiment_name,
         save_video=args.save_video,
-        full_tensor=args.full_tensor
+        full_tensor=args.full_tensor,
+        parallel=args.parallel
     )
 
     # Run experiment

@@ -70,14 +70,13 @@ end
 
 RxInfer.GraphPPL.default_constraints(::typeof(efe_minigrid_agent)) = efe_minigrid_agent_constraints()
 
-@initialization function efe_minigrid_agent_initialization(size, p_current_location, p_current_orientation, p_current_key_door_state, p_door_location, p_key_location, number_type)
-    μ(current_location) = p_current_location
+@initialization function efe_minigrid_agent_initialization(p_current_location, p_current_orientation, p_current_key_door_state, p_future_locations, p_future_orientations,  p_future_key_door_states, p_door_location, p_key_location)
     μ(current_orientation) = p_current_orientation
     μ(current_key_door_state) = p_current_key_door_state
 
-    μ(location) = Categorical(fill(number_type(1 / size^2), size^2))
-    μ(orientation) = Categorical(fill(number_type(1 / 4), 4))
-    μ(key_door_state) = p_current_key_door_state
+    μ(location) = p_future_locations
+    μ(orientation) = p_future_orientations
+    μ(key_door_state) = p_future_key_door_states
     μ(door_location) = p_door_location
     μ(key_location) = p_key_location
 

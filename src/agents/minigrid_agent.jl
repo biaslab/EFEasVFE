@@ -103,6 +103,24 @@ function execute_initial_action(grid_size::Int, session_id::String)
     return env_state
 end
 
+function get_initialization(initialization_fn, beliefs, previous_result::Nothing)
+    return initialization_fn(beliefs.location, beliefs.orientation, beliefs.key_door_state, beliefs.location, beliefs.orientation, beliefs.key_door_state, beliefs.door_location, beliefs.key_location)
+end
+
+function get_initialization(initialization_fn,beliefs, previous_result)
+    current_location_belief = first(previous_result.posteriors[:location])
+    future_location_beliefs = previous_result.posteriors[:location][2:end]
+    current_orientation_belief = first(previous_result.posteriors[:orientation])
+    future_orientation_beliefs = previous_result.posteriors[:orientation][2:end]
+    current_key_door_state_belief = first(previous_result.posteriors[:key_door_state])
+    future_key_door_state_beliefs = previous_result.posteriors[:key_door_state][2:end]
+    door_location_belief = beliefs.door_location
+    key_location_belief = beliefs.key_location
+    return initialization_fn(current_location_belief, current_orientation_belief, current_key_door_state_belief, future_location_beliefs, future_orientation_beliefs, future_key_door_state_beliefs, door_location_belief, key_location_belief)
+end
+
+
+
 """
     execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, session_id::String; 
                 constraints_fn=klcontrol_minigrid_agent_constraints, 
@@ -129,12 +147,14 @@ Execute a single step in the Minigrid environment using the given model and beli
 # Returns
 - Tuple of (next_action, new_env_state, inference_result)
 """
-function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, session_id::String;
+function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, previous_result, session_id::String;
     constraints_fn=klcontrol_minigrid_agent_constraints,
     initialization_fn=klcontrol_minigrid_agent_initialization,
     inference_kwargs...)
     current_obs = env_state["observation"]
     obs_tensor = create_observation_tensor(current_obs, config.number_type)
+
+    initialization = get_initialization(initialization_fn, beliefs, previous_result)
 
     orientation = zeros(config.number_type, 4)
     orientation[current_obs["direction"]+1] = one(config.number_type)
@@ -165,31 +185,24 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
         ),
         constraints=constraints_fn(),
         callbacks=callbacks,
+        returnvars=KeepLast(),
         iterations=config.n_iterations,
-        initialization=initialization_fn(
-            config.grid_size,
-            beliefs.location,
-            beliefs.orientation,
-            beliefs.key_door_state,
-            beliefs.door_location,
-            beliefs.key_location,
-            config.number_type
-        );
+        initialization=initialization;
         inference_kwargs...  # Pass through any additional inference arguments
     )
 
-    next_action = mode(first(last(result.posteriors[:u])))
+    next_action = mode(first(result.posteriors[:u]))
     env_action = convert_action(next_action)
     @debug "Executing action: $next_action with environment encoding $env_action"
     env_state = step_environment(env_action, session_id)
     @debug "Received reward: $(env_state["reward"])"
 
     # Update beliefs
-    beliefs.location = last(result.posteriors[:current_location])
-    beliefs.orientation = last(result.posteriors[:current_orientation])
-    beliefs.key_door_state = last(result.posteriors[:current_key_door_state])
-    beliefs.key_location = last(result.posteriors[:key_location])
-    beliefs.door_location = last(result.posteriors[:door_location])
+    beliefs.location = result.posteriors[:current_location]
+    beliefs.orientation = result.posteriors[:current_orientation]
+    beliefs.key_door_state = result.posteriors[:current_key_door_state]
+    beliefs.key_location = result.posteriors[:key_location]
+    beliefs.door_location = result.posteriors[:door_location]
 
     return next_action, env_state, result  # Return the inference result as well
 end
@@ -305,6 +318,7 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng;
         reward = 0
         env_state = execute_initial_action(config.grid_size, session_id)
         action = 1
+        previous_result = nothing
 
         # Store initial frame if recording
         if record
@@ -312,14 +326,15 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng;
         end
 
         for t in config.time_horizon:-1:1
-            action, env_state, _ = execute_step(
+            action, env_state, result = execute_step(
                 env_state, action, beliefs, model, tensors, config, goal,
-                callbacks, t, session_id;
+                callbacks, t, previous_result, session_id;
                 constraints_fn=constraints_fn,
                 initialization_fn=initialization_fn,
                 inference_kwargs...  # Forward any additional inference arguments
             )
             reward += env_state["reward"]
+            previous_result = result
 
             if record
                 push!(frames, convert_frame(env_state["frame"]))
@@ -331,7 +346,7 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng;
 
         # Save video if recording
         if record && !isnothing(frames)
-            record_episode_to_video(frames, datadir("results", config.experiment_name, "episode_$(config.n_episodes).mp4"))
+            record_episode_to_video(frames, datadir("results", "minigrid", config.experiment_name, "episode_$(config.n_episodes).mp4"))
         end
 
         return reward

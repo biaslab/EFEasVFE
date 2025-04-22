@@ -156,7 +156,7 @@ function run_experiment(config::ExperimentConfig)
     tensors = load_tensors(config.grid_size, config.number_type; sparse_tensor=config.sparse_tensor)
 
     # Create results directory
-    mkpath(datadir("results", config.experiment_name))
+    mkpath(datadir("results", "minigrid", config.experiment_name))
 
     # Create goal
     goal = create_goal(config.grid_size, config.number_type)

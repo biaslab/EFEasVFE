@@ -89,7 +89,7 @@ convert_action(next_action::AbstractVector) = convert_action(argmax(next_action)
 
 function initialize_beliefs(grid_size, T::Type{<:AbstractFloat})
     return MinigridBeliefs(
-        location=Categorical(fill(T(1 / grid_size^2), grid_size^2)),
+        location=Categorical([i <= grid_size^2 - 2*grid_size ? T(1 / (grid_size^2 - 2*grid_size)) : zero(T) for i in 1:grid_size^2]),
         orientation=Categorical(fill(T(1 / 4), 4)),
         key_location=Categorical(fill(T(1 / (grid_size^2 - 2 * grid_size)), grid_size^2 - 2 * grid_size)),
         door_location=Categorical(fill(T(1 / (grid_size^2 - 2 * grid_size)), grid_size^2 - 2 * grid_size)),

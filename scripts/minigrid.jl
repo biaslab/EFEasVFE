@@ -256,8 +256,10 @@ function save_results(config::ExperimentConfig, mean_reward_kl::Float64, std_rew
     - Parallel Execution: $(config.parallel)
     $(config.parallel ? "- Thread Count: $(Threads.nthreads())" : "")
     ## Results
-    - Mean Reward: $(round(mean_reward, digits=3))
-    - Standard Deviation: $(round(std_reward, digits=3))
+    - Mean Reward KL: $(round(mean_reward_kl, digits=3))
+    - Standard Deviation KL: $(round(std_reward_kl, digits=3))
+    - Mean Reward EFE: $(round(mean_reward_efe, digits=3))
+    - Standard Deviation EFE: $(round(std_reward_efe, digits=3))
 
     ## Timestamp
     Experiment conducted at: $timestamp

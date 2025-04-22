@@ -1,6 +1,5 @@
 using TensorOperations
 
-relu(x) = max(x, tiny)
 BayesBase.mean(q_a::PointMass) = q_a.point
 
 # Rules for observation model (q_out is pointmass)

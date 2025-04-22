@@ -65,6 +65,8 @@ Base.@kwdef struct ExperimentConfig
     seed::Int
     experiment_name::String = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")  # Default to timestamp
     save_video::Bool = false  # Default to false
+    full_tensor::Bool = false
+    parallel::Bool = false    # Whether to use parallel execution
 end
 
 function Base.show(io::IO, config::ExperimentConfig)
@@ -81,6 +83,11 @@ function Base.show(io::IO, config::ExperimentConfig)
     println(io, "seed=$(config.seed), ")
     println(io, "experiment_name=$(config.experiment_name), ")
     println(io, "save_video=$(config.save_video)")
+    println(io, "full_tensor=$(config.full_tensor)")
+    println(io, "parallel=$(config.parallel)")
+    if config.parallel
+        println(io, "threads=", Threads.nthreads())
+    end
 end
 
 """
@@ -99,14 +106,18 @@ end
 
 Load the required tensors for the experiment.
 """
-function load_tensors(grid_size, number_type)
+function load_tensors(grid_size, number_type; full_tensor=false)
     @info "Loading tensors for grid size $grid_size"
-
-    observation_tensors = EFEasVFE.load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/", float_type=number_type)
-    door_key_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor", float_type=number_type)
-    location_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor", float_type=number_type)
+    if full_tensor
+        observation_tensors = collect(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
+        door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type)
+        location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, number_type)
+    else
+        observation_tensors = SparseArray.(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
+        door_key_transition_tensor = SparseArray(EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type))
+        location_transition_tensor = SparseArray(EFEasVFE.get_self_transition_tensor(grid_size, number_type))
+    end
     orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(number_type)
-
     @debug "Tensors loaded successfully"
 
     return (
@@ -136,8 +147,13 @@ Run the minigrid experiment with the given configuration.
 """
 function run_experiment(config::ExperimentConfig)
     @info "Starting experiment" config
+
+    if config.parallel
+        @info "Using parallel execution with $(Threads.nthreads()) threads"
+    end
+
     # Load tensors
-    tensors = load_tensors(config.grid_size, config.number_type)
+    tensors = load_tensors(config.grid_size, config.number_type; full_tensor=config.full_tensor)
 
     # Create results directory
     mkpath(datadir("results", config.experiment_name))
@@ -156,7 +172,8 @@ function run_experiment(config::ExperimentConfig)
         visualize=config.visualize,
         seed=config.seed,
         record_episode=config.save_video,
-        experiment_name=config.experiment_name
+        experiment_name=config.experiment_name,
+        parallel=config.parallel  # Pass through parallel option
     )
 
     # Run KL control agent
@@ -166,6 +183,7 @@ function run_experiment(config::ExperimentConfig)
         tensors,
         agent_config,
         goal;
+        parallel=config.parallel            # Explicitly set parallel execution
     )
 
     @info "Experiment completed" mean_reward = m_kl std_reward = s_kl
@@ -195,7 +213,9 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
         "std_reward" => std_reward,
         "seed" => config.seed,
         "experiment_name" => config.experiment_name,
-        "model source" => GraphPPL.getsource(klcontrol_minigrid_agent())
+        "model source" => GraphPPL.getsource(klcontrol_minigrid_agent()),
+        "parallel" => config.parallel,
+        "thread_count" => config.parallel ? Threads.nthreads() : 1
     )
 
     # Save results in multiple formats
@@ -218,6 +238,8 @@ function save_results(config::ExperimentConfig, mean_reward::Float64, std_reward
     - Number of Iterations: $(config.n_iterations)
     - Seed: $(config.seed)
     - Experiment Name: $(config.experiment_name)
+    - Parallel Execution: $(config.parallel)
+    $(config.parallel ? "- Thread Count: $(Threads.nthreads())" : "")
     ## Results
     - Mean Reward: $(round(mean_reward, digits=3))
     - Standard Deviation: $(round(std_reward, digits=3))
@@ -296,6 +318,12 @@ function parse_command_line()
         "--save-video"
         help = "Save video of the last episode"
         action = :store_true
+        "--full-tensor"
+        help = "Materializes full tensors for transition and observation tensors"
+        action = :store_true
+        "--parallel"
+        help = "Enable parallel execution of episodes using $(Threads.nthreads()) threads"
+        action = :store_true
     end
 
     args = parse_args(s)
@@ -332,7 +360,9 @@ function parse_command_line()
         save_results=args["save-results"],
         seed=args["seed"],
         experiment_name=args["experiment-name"],
-        save_video=args["save-video"]
+        save_video=args["save-video"],
+        full_tensor=args["full-tensor"],
+        parallel=args["parallel"]
     )
 end
 
@@ -356,7 +386,9 @@ function main()
         save_results=args.save_results,
         seed=args.seed,
         experiment_name=args.experiment_name,
-        save_video=args.save_video
+        save_video=args.save_video,
+        full_tensor=args.full_tensor,
+        parallel=args.parallel
     )
 
     # Run experiment

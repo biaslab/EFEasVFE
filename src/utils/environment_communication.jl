@@ -1,7 +1,8 @@
 using HTTP
 using JSON
+using UUIDs
 
-export reset_environment, step_environment, get_action_space, EnvironmentError
+export reset_environment, step_environment, get_action_space, EnvironmentError, create_environment, close_environment
 
 const API_URL = "http://localhost:8000"
 
@@ -36,28 +37,68 @@ function check_response(response::HTTP.Response)
 end
 
 """
-    reset_environment()
+    create_environment(grid_size::Int; render_mode::String="rgb_array", seed::UInt32=42)
 
-Reset the environment to its initial state.
+Create a new environment instance with a unique session ID.
+
+# Arguments
+- `grid_size::Int`: The grid size
+- `render_mode::String`: The rendering mode ("human" or "rgb_array")
+- `seed::UInt32`: Random seed for environment initialization
 
 # Returns
-- Dictionary containing the initial environment state
+- Dictionary containing the initial environment state and session_id
 
 # Throws
-- `EnvironmentError` if the reset request fails
+- `EnvironmentError` if the creation request fails
 """
-function reset_environment()
-    response = HTTP.request("GET", "$API_URL/reset", retry=true)
+function create_environment(grid_size::Int; render_mode::String="rgb_array", seed::UInt32=42)
+    response = HTTP.request(
+        "POST",
+        "$API_URL/create",
+        ["Content-Type" => "application/json"],
+        JSON.json(Dict(
+            "grid_size" => grid_size,
+            "render_mode" => render_mode,
+            "seed" => seed
+        ))
+    )
     return check_response(response)
 end
 
 """
-    step_environment(action::Int)
+    reset_environment(session_id::String)
+
+Reset the environment for a specific session.
+
+# Arguments
+- `session_id::String`: The session ID
+
+# Returns
+- Dictionary containing the reset environment state
+
+# Throws
+- `EnvironmentError` if the reset request fails
+"""
+function reset_environment(session_id::String)
+    response = HTTP.request(
+        "POST",
+        "$API_URL/reset",
+        ["Content-Type" => "application/json"],
+        JSON.json(Dict("session_id" => session_id));
+        retry=true
+    )
+    return check_response(response)
+end
+
+"""
+    step_environment(action::Int, session_id::String)
 
 Execute an action in the environment.
 
 # Arguments
 - `action::Int`: The action to execute (0-6)
+- `session_id::String`: The session ID
 
 # Returns
 - Dictionary containing the new environment state and reward
@@ -65,14 +106,17 @@ Execute an action in the environment.
 # Throws
 - `EnvironmentError` if the step request fails
 """
-function step_environment(action::Int)
+function step_environment(action::Int, session_id::String)
     for attempt in 1:3  # 3 retries
         try
             response = HTTP.request(
                 "POST",
                 "$API_URL/step",
                 ["Content-Type" => "application/json"],
-                JSON.json(Dict("action" => action));
+                JSON.json(Dict(
+                    "action" => action,
+                    "session_id" => session_id
+                ));
                 retry=false,  # we'll handle retries ourselves
                 connect_timeout=5,  # 5 second connection timeout
             )
@@ -88,38 +132,33 @@ function step_environment(action::Int)
 end
 
 """
-    reinitialize_environment(grid_size::Int; render_mode::Union{String,Nothing}="human")
+    reinitialize_environment(grid_size::Int; render_mode::String="rgb_array", seed::UInt32=42)
 
-Reinitialize the environment with a new grid size.
+Reinitialize the environment with a new grid size. (Alias for create_environment)
 
 # Arguments
 - `grid_size::Int`: The new grid size
-- `render_mode::Union{String,Nothing}`: The rendering mode ("human" or nothing for no rendering)
+- `render_mode::String`: The rendering mode ("human" or "rgb_array")
+- `seed::UInt32`: Random seed for environment initialization
 
 # Returns
-- Dictionary containing the new environment state
+- Dictionary containing the new environment state and session_id
 
 # Throws
 - `EnvironmentError` if the reinitialize request fails
 """
-function reinitialize_environment(grid_size::Int; render_mode::String="human", seed::UInt32=42)
-    response = HTTP.request(
-        "POST",
-        "$API_URL/reinitialize",
-        ["Content-Type" => "application/json"],
-        JSON.json(Dict(
-            "grid_size" => grid_size,
-            "render_mode" => render_mode,
-            "seed" => seed
-        ))
-    )
-    return check_response(response)
+function reinitialize_environment(grid_size::Int; render_mode::String="rgb_array", seed::UInt32=42)
+    # This is now an alias for create_environment for backward compatibility
+    return create_environment(grid_size; render_mode=render_mode, seed=seed)
 end
 
 """
-    get_action_space()
+    get_action_space(session_id::String)
 
 Get information about the available actions in the environment.
+
+# Arguments
+- `session_id::String`: The session ID
 
 # Returns
 - Dictionary containing action space information
@@ -127,8 +166,13 @@ Get information about the available actions in the environment.
 # Throws
 - `EnvironmentError` if the request fails
 """
-function get_action_space()
-    response = HTTP.request("GET", "$API_URL/action_space")
+function get_action_space(session_id::String)
+    response = HTTP.request(
+        "POST",
+        "$API_URL/action_space",
+        ["Content-Type" => "application/json"],
+        JSON.json(Dict("session_id" => session_id))
+    )
     return check_response(response)
 end
 
@@ -149,15 +193,26 @@ function get_observation_space()
 end
 
 """
-    close_environment()
+    close_environment(session_id::String)
 
-Close the environment and clean up resources.
+Close a specific environment session and clean up resources.
+
+# Arguments
+- `session_id::String`: The session ID
+
+# Returns
+- Dictionary containing success status
 
 # Throws
 - `EnvironmentError` if the close request fails
 """
-function close_environment()
-    response = HTTP.request("POST", "$API_URL/close")
+function close_environment(session_id::String)
+    response = HTTP.request(
+        "POST",
+        "$API_URL/close",
+        ["Content-Type" => "application/json"],
+        JSON.json(Dict("session_id" => session_id))
+    )
     return check_response(response)
 end
 
@@ -176,3 +231,8 @@ function render_environment()
     response = HTTP.request("GET", "$API_URL/render")
     return check_response(response)
 end
+
+# Maintain backward compatibility with non-session functions
+reset_environment() = error("reset_environment without session_id is no longer supported. Use create_environment instead.")
+step_environment(action::Int) = error("step_environment without session_id is no longer supported. Create an environment first.")
+get_action_space() = error("get_action_space without session_id is no longer supported. Create an environment first.")

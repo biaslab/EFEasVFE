@@ -9,7 +9,7 @@ using Statistics
 using ArgParse
 using TinyHugeNumbers
 using RxInfer.GraphPPL
-import RxInfer: Categorical
+import RxInfer: Categorical, mode
 using JSON
 using HTTP
 using VideoIO
@@ -53,8 +53,8 @@ function parse_command_line()
         "--save-animation"
         help = "Save an animation of belief evolution"
         action = :store_true
-        "--parafac"
-        help = "Use PARAFAC decomposed tensors"
+        "--full-tensor"
+        help = "Use full tensors instead of sparse tensors"
         action = :store_true
     end
 
@@ -94,11 +94,6 @@ function print_debug_info(beliefs, env_state, action)
     for (i, p) in enumerate(beliefs.key_door_state.p)
         println("  $(states[i]): $(round(p, digits=3))")
     end
-
-    # Print action
-    println("\nSelected Action: ", action)
-    action_names = ["Turn Left", "Turn Right", "Forward", "Pickup", "None", "Open Door"]
-    println("Action meaning: ", action_names[action+1])
 end
 
 """
@@ -106,16 +101,16 @@ end
 
 Load the required tensors for the experiment.
 """
-function load_tensors(grid_size, number_type; parafac_decomposition=false)
+function load_tensors(grid_size, number_type; full_tensor=false)
     @info "Loading tensors for grid size $grid_size"
-    if parafac_decomposition
-        observation_tensors = EFEasVFE.load_cp_observation_tensors("data/parafac_decomposed_tensors/grid_size$(grid_size)/", float_type=number_type)
-        door_key_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/door_key_transition_tensor", float_type=number_type)
-        location_transition_tensor = EFEasVFE.load_cp_tensor("data/parafac_decomposed_tensors/grid_size$(grid_size)/location_transition_tensor", float_type=number_type)
-    else
+    if full_tensor
         observation_tensors = collect(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
         door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type)
         location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, number_type)
+    else
+        observation_tensors = SparseArray.(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
+        door_key_transition_tensor = SparseArray(EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type))
+        location_transition_tensor = SparseArray(EFEasVFE.get_self_transition_tensor(grid_size, number_type))
     end
     orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(number_type)
 
@@ -174,9 +169,9 @@ function main()
         seed=UInt32(config.seed)
     )
 
-    # Create results directory with grid size, seed, iterations and parafac info
+    # Create results directory with grid size, seed, iterations and full-tensor info
     results_dir = mkpath(datadir("debug",
-        "grid$(config.grid_size)_seed$(config.seed)_iter$(config.n_iterations)_parafac$(args["parafac"])"
+        "grid$(config.grid_size)_seed$(config.seed)_iter$(config.n_iterations)_fulltensor$(args["full-tensor"])"
     ))
     @info "Initialized environment"
     # Initialize beliefs and tensors
@@ -184,7 +179,7 @@ function main()
     tensors = load_tensors(
         config.grid_size,
         config.number_type;
-        parafac_decomposition=args["parafac"]  # Pass the flag value
+        full_tensor=args["full-tensor"]  # Pass the flag value
     )
     goal = create_goal(config.grid_size, config.number_type)
     @info "Initialized beliefs and tensors"
@@ -201,7 +196,7 @@ function main()
     end
     @info "Starting inference..."
     # Execute a single step with debug options
-    action, env_action, inference_result = execute_step(
+    action, new_env_state, inference_result = execute_step(
         env_state,
         action,
         beliefs,
@@ -216,8 +211,8 @@ function main()
         # Add any other inference kwargs as needed
     )
     @info "Inference completed"
-    new_env_state = step_environment(env_action)
-
+    next_action = mode(first(last(inference_result.posteriors[:u])))
+    env_action = EFEasVFE.convert_action(next_action)
 
     # Plot and save inference results
     @info "Plotting inference results..."

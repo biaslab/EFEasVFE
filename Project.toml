@@ -15,6 +15,7 @@ JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 NPZ = "15e1cf62-19b3-5cfa-8e77-841668bca605"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
@@ -26,19 +27,21 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 TensorOperations = "6aa20fa7-93e2-5fca-9bc0-fbd0db3c71a2"
 TinyHugeNumbers = "783c9a47-75a3-44ac-a16b-f1ab7b3acf04"
 Tullio = "bc48ee85-29a4-5162-ae0b-a64e1601d4bc"
+UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 
 [compat]
+LoopVectorization = "0.12.172"
+Random = "1.11.0"
 RxEnvironments = "0.2"
 RxInfer = "4.0"
+UUIDs = "1.11.0"
 julia = "1.10"
 
 [extras]
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 ReTestItems = "817f1d60-ba6b-4fd5-9520-3cf149f6a823"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
-[sources.RxEnvironmentsZoo]
-path = "`~/.julia/dev/RxEnvironmentsZoo`"
-
 [targets]
-test = ["Test", "ReTestItems"]
+test = ["Test", "Random", "ReTestItems"]

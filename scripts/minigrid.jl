@@ -65,7 +65,7 @@ Base.@kwdef struct ExperimentConfig
     seed::Int
     experiment_name::String = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")  # Default to timestamp
     save_video::Bool = false  # Default to false
-    full_tensor::Bool = false
+    sparse_tensor::Bool = false
     parallel::Bool = false    # Whether to use parallel execution
 end
 
@@ -83,7 +83,7 @@ function Base.show(io::IO, config::ExperimentConfig)
     println(io, "seed=$(config.seed), ")
     println(io, "experiment_name=$(config.experiment_name), ")
     println(io, "save_video=$(config.save_video)")
-    println(io, "full_tensor=$(config.full_tensor)")
+    println(io, "sparse_tensor=$(config.sparse_tensor)")
     println(io, "parallel=$(config.parallel)")
     if config.parallel
         println(io, "threads=", Threads.nthreads())
@@ -106,16 +106,16 @@ end
 
 Load the required tensors for the experiment.
 """
-function load_tensors(grid_size, number_type; full_tensor=false)
+function load_tensors(grid_size, number_type; sparse_tensor=false)
     @info "Loading tensors for grid size $grid_size"
-    if full_tensor
-        observation_tensors = collect(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
-        door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type)
-        location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, number_type)
-    else
+    if sparse_tensor
         observation_tensors = SparseArray.(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
         door_key_transition_tensor = SparseArray(EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type))
         location_transition_tensor = SparseArray(EFEasVFE.get_self_transition_tensor(grid_size, number_type))
+    else
+        observation_tensors = collect(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
+        door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type)
+        location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, number_type)
     end
     orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(number_type)
     @debug "Tensors loaded successfully"
@@ -153,7 +153,7 @@ function run_experiment(config::ExperimentConfig)
     end
 
     # Load tensors
-    tensors = load_tensors(config.grid_size, config.number_type; full_tensor=config.full_tensor)
+    tensors = load_tensors(config.grid_size, config.number_type; sparse_tensor=config.sparse_tensor)
 
     # Create results directory
     mkpath(datadir("results", config.experiment_name))
@@ -176,21 +176,34 @@ function run_experiment(config::ExperimentConfig)
         parallel=config.parallel  # Pass through parallel option
     )
 
-    # Run KL control agent
-    @info "Running KL control agent"
-    m_kl, s_kl = run_minigrid_agent(
-        klcontrol_minigrid_agent,
+    # # Run KL control agent
+    # @info "Running KL control agent"
+    # m_kl, s_kl = run_minigrid_agent(
+    #     klcontrol_minigrid_agent,
+    #     tensors,
+    #     agent_config,
+    #     goal;
+    #     parallel=config.parallel            # Explicitly set parallel execution
+    # )
+
+    @info "Running EFE agent"
+    m_efe, s_efe = run_minigrid_agent(
+        efe_minigrid_agent,
         tensors,
         agent_config,
-        goal;
-        parallel=config.parallel            # Explicitly set parallel execution
+        goal,
+        constraints_fn=efe_minigrid_agent_constraints,
+        initialization_fn=efe_minigrid_agent_initialization;
+        parallel=config.parallel,            # Explicitly set parallel execution
+        options=(force_marginal_computation=true,
+            limit_stack_depth=500), # Force marginal computation
     )
 
-    @info "Experiment completed" mean_reward = m_kl std_reward = s_kl
+    @info "Experiment completed" mean_reward_efe = m_efe std_reward_efe = s_efe
 
     # Save results if requested
     if config.save_results
-        save_results(config, m_kl, s_kl)
+        save_results(config, m_efe, s_efe)
     end
 
     return m_kl, s_kl
@@ -318,8 +331,8 @@ function parse_command_line()
         "--save-video"
         help = "Save video of the last episode"
         action = :store_true
-        "--full-tensor"
-        help = "Materializes full tensors for transition and observation tensors"
+        "--sparse-tensor"
+        help = "Use sparse representation for transition and observation tensors"
         action = :store_true
         "--parallel"
         help = "Enable parallel execution of episodes using $(Threads.nthreads()) threads"
@@ -361,7 +374,7 @@ function parse_command_line()
         seed=args["seed"],
         experiment_name=args["experiment-name"],
         save_video=args["save-video"],
-        full_tensor=args["full-tensor"],
+        sparse_tensor=args["sparse-tensor"],
         parallel=args["parallel"]
     )
 end
@@ -387,7 +400,7 @@ function main()
         seed=args.seed,
         experiment_name=args.experiment_name,
         save_video=args.save_video,
-        full_tensor=args.full_tensor,
+        sparse_tensor=args.sparse_tensor,
         parallel=args.parallel
     )
 
@@ -401,4 +414,4 @@ if abspath(PROGRAM_FILE) == @__FILE__
     main()
 end
 
-
+main()

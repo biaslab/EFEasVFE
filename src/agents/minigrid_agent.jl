@@ -103,7 +103,36 @@ function execute_initial_action(grid_size::Int, session_id::String)
     return env_state
 end
 
-function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, session_id::String; inference_kwargs...)
+"""
+    execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, session_id::String; 
+                constraints_fn=klcontrol_minigrid_agent_constraints, 
+                initialization_fn=klcontrol_minigrid_agent_initialization,
+                inference_kwargs...)
+
+Execute a single step in the Minigrid environment using the given model and beliefs.
+
+# Arguments
+- `env_state`: The current state of the environment
+- `executed_action`: The last executed action
+- `beliefs`: Current agent beliefs
+- `model`: The agent model to use
+- `tensors`: Named tuple of required transition tensors
+- `config`: Configuration parameters
+- `goal`: Goal distribution
+- `callbacks`: Optional callback functions for inference
+- `time_remaining`: How many time steps remain in the episode
+- `session_id`: The environment session ID
+- `constraints_fn`: Function that returns the constraints for inference (default: klcontrol_minigrid_agent_constraints)
+- `initialization_fn`: Function that returns the initialization for inference (default: klcontrol_minigrid_agent_initialization)
+- `inference_kwargs...`: Additional keyword arguments to pass to the inference process
+
+# Returns
+- Tuple of (next_action, new_env_state, inference_result)
+"""
+function execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, session_id::String;
+    constraints_fn=klcontrol_minigrid_agent_constraints,
+    initialization_fn=klcontrol_minigrid_agent_initialization,
+    inference_kwargs...)
     current_obs = env_state["observation"]
     obs_tensor = create_observation_tensor(current_obs, config.number_type)
 
@@ -134,10 +163,10 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             action=previous_action,
             orientation_observation=orientation
         ),
-        constraints=klcontrol_minigrid_agent_constraints(),
+        constraints=constraints_fn(),
         callbacks=callbacks,
         iterations=config.n_iterations,
-        initialization=klcontrol_minigrid_agent_initialization(
+        initialization=initialization_fn(
             config.grid_size,
             beliefs.location,
             beliefs.orientation,
@@ -229,7 +258,11 @@ function record_episode_to_video(frames::Vector{Array{UInt8,3}}, video_path::Str
 end
 
 """
-    run_single_episode(model, tensors, config, goal, callbacks, rng; record=false)
+    run_single_episode(model, tensors, config, goal, callbacks, rng; 
+                        constraints_fn=klcontrol_minigrid_agent_constraints,
+                        initialization_fn=klcontrol_minigrid_agent_initialization,
+                        record=false,
+                        inference_kwargs...)
 
 Run a single episode of the minigrid environment.
 
@@ -240,12 +273,19 @@ Run a single episode of the minigrid environment.
 - `goal`: Goal distribution
 - `callbacks`: Optional callback functions
 - `rng`: Random number generator
+- `constraints_fn`: Function that returns the constraints for inference (default: klcontrol_minigrid_agent_constraints)
+- `initialization_fn`: Function that returns the initialization for inference (default: klcontrol_minigrid_agent_initialization)
 - `record`: Whether to record the episode to video
+- `inference_kwargs...`: Additional keyword arguments to pass to the inference process
 
 # Returns
 - The total reward for the episode
 """
-function run_single_episode(model, tensors, config, goal, callbacks, rng; record=false)
+function run_single_episode(model, tensors, config, goal, callbacks, rng;
+    constraints_fn=klcontrol_minigrid_agent_constraints,
+    initialization_fn=klcontrol_minigrid_agent_initialization,
+    record=false,
+    inference_kwargs...)
     # Ensure we use rgb_array render mode if recording
     render_mode = if record
         "rgb_array"
@@ -272,7 +312,13 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng; record
         end
 
         for t in config.time_horizon:-1:1
-            action, env_state, _ = execute_step(env_state, action, beliefs, model, tensors, config, goal, callbacks, t, session_id)
+            action, env_state, _ = execute_step(
+                env_state, action, beliefs, model, tensors, config, goal,
+                callbacks, t, session_id;
+                constraints_fn=constraints_fn,
+                initialization_fn=initialization_fn,
+                inference_kwargs...  # Forward any additional inference arguments
+            )
             reward += env_state["reward"]
 
             if record
@@ -300,7 +346,12 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng; record
 end
 
 """
-    run_minigrid_agent(model, tensors, config, goal; callbacks=nothing)
+    run_minigrid_agent(model, tensors, config, goal; 
+                      callbacks=nothing,
+                      constraints_fn=klcontrol_minigrid_agent_constraints,
+                      initialization_fn=klcontrol_minigrid_agent_initialization,
+                      parallel=nothing,
+                      inference_kwargs...)
 
 Run a minigrid agent experiment with the given model and configuration.
 
@@ -310,6 +361,10 @@ Run a minigrid agent experiment with the given model and configuration.
 - `config::MinigridConfig`: Configuration parameters
 - `goal`: Goal distribution
 - `callbacks`: Optional callback functions
+- `constraints_fn`: Function that returns the constraints for inference (default: klcontrol_minigrid_agent_constraints)
+- `initialization_fn`: Function that returns the initialization for inference (default: klcontrol_minigrid_agent_initialization)
+- `parallel`: Whether to run episodes in parallel (defaults to config.parallel if nothing)
+- `inference_kwargs...`: Additional keyword arguments to pass to the inference process
 
 # Returns
 - Tuple of (mean_reward, std_reward)
@@ -323,7 +378,10 @@ function run_minigrid_agent(
     config::MinigridConfig,
     goal::Categorical;
     callbacks=nothing,
-    parallel::Union{Nothing,Bool}=nothing  # New keyword argument, defaults to config value if nothing
+    constraints_fn=klcontrol_minigrid_agent_constraints,
+    initialization_fn=klcontrol_minigrid_agent_initialization,
+    parallel::Union{Nothing,Bool}=nothing,  # New keyword argument, defaults to config value if nothing
+    inference_kwargs...  # Additional inference kwargs to pass through
 )
     validate_config(config)
     rewards = zeros(config.n_episodes)
@@ -372,7 +430,10 @@ function run_minigrid_agent(
 
             rewards[i] = run_single_episode(
                 model, tensors, local_config, goal, callbacks, thread_rng;
-                record=should_record
+                constraints_fn=constraints_fn,
+                initialization_fn=initialization_fn,
+                record=should_record,
+                inference_kwargs...  # Forward any additional inference arguments
             )
 
             # Update progress atomically
@@ -388,7 +449,10 @@ function run_minigrid_agent(
             should_record = config.record_episode && i == config.n_episodes
             rewards[i] = run_single_episode(
                 model, tensors, config, goal, callbacks, rng;
-                record=should_record
+                constraints_fn=constraints_fn,
+                initialization_fn=initialization_fn,
+                record=should_record,
+                inference_kwargs...  # Forward any additional inference arguments
             )
         end
     end

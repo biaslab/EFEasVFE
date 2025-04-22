@@ -39,7 +39,7 @@ function parse_command_line()
         "--number-type"
         help = "Number type to use (Float32 or Float64)"
         arg_type = String
-        default = "Float64"
+        default = "Float32"
         "--visualize"
         help = "Whether to visualize the environment"
         action = :store_true
@@ -53,8 +53,8 @@ function parse_command_line()
         "--save-animation"
         help = "Save an animation of belief evolution"
         action = :store_true
-        "--full-tensor"
-        help = "Use full tensors instead of sparse tensors"
+        "--sparse-tensor"
+        help = "Use sparse representation for transition and observation tensors"
         action = :store_true
     end
 
@@ -101,16 +101,16 @@ end
 
 Load the required tensors for the experiment.
 """
-function load_tensors(grid_size, number_type; full_tensor=false)
+function load_tensors(grid_size, number_type; sparse_tensor=false)
     @info "Loading tensors for grid size $grid_size"
-    if full_tensor
-        observation_tensors = collect(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
-        door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type)
-        location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, number_type)
-    else
+    if sparse_tensor
         observation_tensors = SparseArray.(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
         door_key_transition_tensor = SparseArray(EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type))
         location_transition_tensor = SparseArray(EFEasVFE.get_self_transition_tensor(grid_size, number_type))
+    else
+        observation_tensors = collect(eachslice(EFEasVFE.generate_observation_tensor(grid_size, number_type), dims=(1, 2)))
+        door_key_transition_tensor = EFEasVFE.get_key_door_state_transition_tensor(grid_size, number_type)
+        location_transition_tensor = EFEasVFE.get_self_transition_tensor(grid_size, number_type)
     end
     orientation_transition_tensor = EFEasVFE.get_orientation_transition_tensor(number_type)
 
@@ -163,15 +163,17 @@ function main()
     )
     @info "Created configuration"
     # Initialize environment
-    env_state = EFEasVFE.reinitialize_environment(
+
+    env_response = EFEasVFE.create_environment(
         config.grid_size + 2,
         render_mode=args["visualize"] ? "human" : "rgb_array",
         seed=UInt32(config.seed)
     )
+    session_id = env_response["session_id"]
 
-    # Create results directory with grid size, seed, iterations and full-tensor info
+    # Create results directory with grid size, seed, iterations and sparse-tensor info
     results_dir = mkpath(datadir("debug",
-        "grid$(config.grid_size)_seed$(config.seed)_iter$(config.n_iterations)_fulltensor$(args["full-tensor"])"
+        "grid$(config.grid_size)_seed$(config.seed)_iter$(config.n_iterations)_sparsetensor$(args["sparse-tensor"])"
     ))
     @info "Initialized environment"
     # Initialize beliefs and tensors
@@ -179,12 +181,12 @@ function main()
     tensors = load_tensors(
         config.grid_size,
         config.number_type;
-        full_tensor=args["full-tensor"]  # Pass the flag value
+        sparse_tensor=args["sparse-tensor"]  # Pass the flag value
     )
     goal = create_goal(config.grid_size, config.number_type)
     @info "Initialized beliefs and tensors"
     # Execute initial action
-    env_state = execute_initial_action(config.grid_size)
+    env_state = execute_initial_action(config.grid_size, session_id)
     action = 1
     @info "Executed initial action"
     # Save initial frame if requested
@@ -200,14 +202,19 @@ function main()
         env_state,
         action,
         beliefs,
-        klcontrol_minigrid_agent,
+        efe_minigrid_agent,
         tensors,
         config,
         goal,
         nothing,  # no callbacks
-        config.time_horizon;
+        config.time_horizon,
+        session_id;
+        constraints_fn=efe_minigrid_agent_constraints,
+        initialization_fn=efe_minigrid_agent_initialization,
         free_energy=true,  # Enable free energy tracking
-        showprogress=true,  # Show inference progress
+        showprogress=true,  # Show inference progress,
+        options=(force_marginal_computation=true,
+            limit_stack_depth=500), # Force marginal computation
         # Add any other inference kwargs as needed
     )
     @info "Inference completed"

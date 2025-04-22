@@ -71,6 +71,7 @@ end
 RxInfer.GraphPPL.default_constraints(::typeof(efe_minigrid_agent)) = efe_minigrid_agent_constraints()
 
 @initialization function efe_minigrid_agent_initialization(p_current_location, p_current_orientation, p_current_key_door_state, p_future_locations, p_future_orientations,  p_future_key_door_states, p_door_location, p_key_location)
+    μ(current_location) = p_current_location
     μ(current_orientation) = p_current_orientation
     μ(current_key_door_state) = p_current_key_door_state
 

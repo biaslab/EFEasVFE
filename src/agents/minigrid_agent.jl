@@ -89,7 +89,7 @@ convert_action(next_action::AbstractVector) = convert_action(argmax(next_action)
 
 function initialize_beliefs(grid_size, T::Type{<:AbstractFloat})
     return MinigridBeliefs(
-        location=Categorical([i <= grid_size^2 - 2*grid_size ? T(1 / (grid_size^2 - 2*grid_size)) : zero(T) for i in 1:grid_size^2]),
+        location=Categorical([i <= grid_size^2 - 2 * grid_size ? T(1 / (grid_size^2 - 2 * grid_size)) : tiny(T) for i in 1:grid_size^2]),
         orientation=Categorical(fill(T(1 / 4), 4)),
         key_location=Categorical(fill(T(1 / (grid_size^2 - 2 * grid_size)), grid_size^2 - 2 * grid_size)),
         door_location=Categorical(fill(T(1 / (grid_size^2 - 2 * grid_size)), grid_size^2 - 2 * grid_size)),
@@ -107,7 +107,7 @@ function get_initialization(initialization_fn, beliefs, previous_result::Nothing
     return initialization_fn(beliefs.location, beliefs.orientation, beliefs.key_door_state, beliefs.location, beliefs.orientation, beliefs.key_door_state, beliefs.door_location, beliefs.key_location)
 end
 
-function get_initialization(initialization_fn,beliefs, previous_result)
+function get_initialization(initialization_fn, beliefs, previous_result)
     current_location_belief = first(previous_result.posteriors[:location])
     future_location_beliefs = previous_result.posteriors[:location][2:end]
     current_orientation_belief = first(previous_result.posteriors[:orientation])
@@ -294,7 +294,7 @@ Run a single episode of the minigrid environment.
 # Returns
 - The total reward for the episode
 """
-function run_single_episode(model, tensors, config, goal, callbacks, rng;
+function run_single_episode(model, tensors, config, goal, callbacks, seed;
     constraints_fn=klcontrol_minigrid_agent_constraints,
     initialization_fn=klcontrol_minigrid_agent_initialization,
     record=false,
@@ -305,9 +305,7 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng;
     else
         config.visualize ? "human" : "rgb_array"
     end
-
-    episode_seed = rand(rng, UInt32)
-    env_response = create_environment(config.grid_size + 2, render_mode=render_mode, seed=episode_seed)
+    env_response = create_environment(config.grid_size + 2, render_mode=render_mode, seed=seed)
     session_id = env_response["session_id"]
 
     try
@@ -346,7 +344,13 @@ function run_single_episode(model, tensors, config, goal, callbacks, rng;
 
         # Save video if recording
         if record && !isnothing(frames)
-            record_episode_to_video(frames, datadir("results", "minigrid", config.experiment_name, "episode_$(config.n_episodes).mp4"))
+            # Get model name from function object if possible
+            model_name = try
+                string(nameof(model))
+            catch
+                "unknown_model"
+            end
+            record_episode_to_video(frames, datadir("results", "minigrid", config.experiment_name, "$(model_name)_episode_$(config.n_episodes).mp4"))
         end
 
         return reward
@@ -405,11 +409,13 @@ function run_minigrid_agent(
     # If parallel keyword is provided, it overrides the config setting
     use_parallel = isnothing(parallel) ? config.parallel : parallel
 
+    rng = StableRNG(config.seed)
+
     # Create a thread-safe RNG for each thread if running in parallel
     if use_parallel
         thread_count = Threads.nthreads()
         @info "Running with parallelization using $thread_count threads"
-        thread_rngs = [StableRNG(config.seed + i) for i in 1:thread_count]
+        episode_seeds = rand(rng, UInt32, config.n_episodes)
 
         # Use Threads.@threads for parallelization
         progress = Progress(config.n_episodes; desc="Running episodes: ")
@@ -417,7 +423,7 @@ function run_minigrid_agent(
         Threads.@threads for i in 1:config.n_episodes
             # Get the RNG for the current thread
             thread_id = Threads.threadid()
-            thread_rng = thread_rngs[thread_id]
+            episode_seed = episode_seeds[i]
 
             # Record only the last episode if record_episode is true
             should_record = config.record_episode && i == config.n_episodes
@@ -444,7 +450,7 @@ function run_minigrid_agent(
             end
 
             rewards[i] = run_single_episode(
-                model, tensors, local_config, goal, callbacks, thread_rng;
+                model, tensors, local_config, goal, callbacks, episode_seed;
                 constraints_fn=constraints_fn,
                 initialization_fn=initialization_fn,
                 record=should_record,
@@ -457,13 +463,14 @@ function run_minigrid_agent(
     else
         # Sequential execution (old behavior)
         @info "Running sequentially"
-        rng = StableRNG(config.seed)
+        episode_seeds = rand(rng, UInt32, config.n_episodes)
 
         @showprogress for i in 1:config.n_episodes
+            episode_seed = episode_seeds[i]
             # Record only the last episode if record_episode is true
             should_record = config.record_episode && i == config.n_episodes
             rewards[i] = run_single_episode(
-                model, tensors, config, goal, callbacks, rng;
+                model, tensors, config, goal, callbacks, episode_seed;
                 constraints_fn=constraints_fn,
                 initialization_fn=initialization_fn,
                 record=should_record,

@@ -18,7 +18,7 @@ import Colors: N0f8
 using EFEasVFE
 using Plots
 
-import EFEasVFE: reinitialize_environment, execute_initial_action, step_environment, initialize_beliefs, convert_frame, execute_step
+import EFEasVFE: create_environment, execute_initial_action, step_environment, initialize_beliefs, convert_frame, execute_step
 
 function parse_command_line()
     s = ArgParseSettings()
@@ -202,15 +202,16 @@ function main()
         env_state,
         action,
         beliefs,
-        efe_minigrid_agent,
+        klcontrol_minigrid_agent,
         tensors,
         config,
         goal,
         nothing,  # no callbacks
         config.time_horizon,
+        nothing,  # no previous result
         session_id;
-        constraints_fn=efe_minigrid_agent_constraints,
-        initialization_fn=efe_minigrid_agent_initialization,
+        constraints_fn=klcontrol_minigrid_agent_constraints,
+        initialization_fn=klcontrol_minigrid_agent_initialization,
         free_energy=true,  # Enable free energy tracking
         showprogress=true,  # Show inference progress,
         options=(force_marginal_computation=true,
@@ -218,7 +219,7 @@ function main()
         # Add any other inference kwargs as needed
     )
     @info "Inference completed"
-    next_action = mode(first(last(inference_result.posteriors[:u])))
+    next_action = mode(first(inference_result.posteriors[:u]))
     env_action = EFEasVFE.convert_action(next_action)
 
     # Plot and save inference results
@@ -232,12 +233,12 @@ function main()
     # Create and save animation if requested
     if args["save-animation"]
         @info "Creating belief evolution animation..."
-        animate_belief_evolution(
-            inference_result,
-            config.grid_size,
-            fps=2,
-            save_path=joinpath(results_dir, "belief_evolution.gif")
-        )
+        # animate_belief_evolution(
+        #     inference_result,
+        #     config.grid_size,
+        #     fps=2,
+        #     save_path=joinpath(results_dir, "belief_evolution.gif")
+        # )
         animate_trajectory_belief(
             inference_result,
             config.grid_size,

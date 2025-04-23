@@ -96,20 +96,6 @@ async def create_environment(config: GridSize):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/reset")
-async def reset_environment(session: EnvSession):
-    """Reset the environment for a specific session"""
-    env_data = get_environment(session.session_id)
-    env = env_data["env"]
-    
-    observation, info = env.reset()
-    env_data["observation"] = observation
-    env_data["info"] = info
-    env_data["last_access"] = time.time()
-    
-    response = create_response_dict(observation, info, session_id=session.session_id)
-    return response
-
 @app.post("/step")
 async def step_environment(action: Action):
     """Take a step in the environment with the given action"""
@@ -136,33 +122,6 @@ async def step_environment(action: Action):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/action_space")
-async def get_action_space(session: EnvSession):
-    """Return information about the action space"""
-    env_data = get_environment(session.session_id)
-    env = env_data["env"]
-    env_data["last_access"] = time.time()
-    
-    return {
-        "n": env.action_space.n,
-        "actions": {
-            0: "left",
-            1: "right",
-            2: "forward",
-            3: "pickup",
-            4: "drop",
-            5: "toggle",
-            6: "done"
-        },
-        "session_id": session.session_id
-    }
-
-@app.post("/reinitialize")
-async def reinitialize_environment(grid_size: GridSize):
-    """Reinitialize the environment with a new grid size and optional rendering mode"""
-    # This is now an alias for create_environment for backward compatibility
-    return await create_environment(grid_size)
-
 @app.post("/close")
 async def close_environment(session: EnvSession):
     """Close a specific environment session"""
@@ -173,19 +132,3 @@ async def close_environment(session: EnvSession):
         del environments[session.session_id]
         return {"success": True, "message": f"Environment {session.session_id} closed"}
     return {"success": False, "message": "Environment not found"}
-
-# Cleanup task - periodically remove unused environments (could be set up with a background task)
-@app.get("/cleanup")
-async def cleanup_environments(timeout_minutes: int = 30):
-    """Remove environments that haven't been accessed in a while"""
-    now = time.time()
-    timeout = timeout_minutes * 60
-    closed_count = 0
-    
-    for session_id in list(environments.keys()):
-        if now - environments[session_id]["last_access"] > timeout:
-            environments[session_id]["env"].close()
-            del environments[session_id]
-            closed_count += 1
-            
-    return {"success": True, "closed_count": closed_count}

@@ -12,7 +12,7 @@ using SparseArrays
 using BenchmarkTools
 using Statistics
 
-import EFEasVFE: reinitialize_environment, execute_initial_action, step_environment, initialize_beliefs, convert_frame, execute_step
+import EFEasVFE: create_environment, execute_initial_action, step_environment, initialize_beliefs, convert_frame, execute_step
 
 function parse_command_line()
     s = ArgParseSettings()
@@ -103,12 +103,13 @@ Run a single benchmark iteration of execute_step.
 """
 function run_benchmark(config, tensors, beliefs, goal, compute_free_energy)
     # Initialize environment and state
-    env_state = reinitialize_environment(
+    env_response = create_environment(
         config.grid_size + 2,
         render_mode="rgb_array",
         seed=UInt32(config.seed)
     )
-    env_state = execute_initial_action(config.grid_size)
+    session_id = env_response["session_id"]
+    env_state = execute_initial_action(config.grid_size, session_id)
     action = 1
 
     # Execute a single step and measure performance
@@ -121,7 +122,9 @@ function run_benchmark(config, tensors, beliefs, goal, compute_free_energy)
         config,
         goal,
         nothing,  # no callbacks
-        config.time_horizon;
+        config.time_horizon,
+        nothing,  # previous_result
+        session_id;  # Add session_id parameter
         free_energy=compute_free_energy,
         showprogress=false
     )

@@ -18,15 +18,14 @@ import RxInfer: Categorical
 
     # State inference
     current_location ~ DiscreteTransition(old_location, location_transition_tensor, old_orientation, key_location, door_location, old_key_door_state, action)
-    current_orientation ~ DiscreteTransition(old_orientation, orientation_transition_tensor, action)
     current_key_door_state ~ DiscreteTransition(old_key_door_state, key_door_transition_tensor, old_location, old_orientation, key_location, door_location, action)
 
     # Observation model with Parafac decomposed tensors
     for x in 1:7, y in 1:7
         decomposed_tensor = observation_tensors[x, y]
-        observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, current_orientation, key_location, door_location, current_key_door_state)
+        observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, orientation_observation, key_location, door_location, current_key_door_state)
     end
-    orientation_observation ~ DiscreteTransition(current_orientation, diageye(number_type, 4))
+    current_orientation ~ DiscreteTransition(orientation_observation, diageye(number_type, 4))
 
     # Planning (Active Inference)
     previous_location = current_location
@@ -46,18 +45,25 @@ import RxInfer: Categorical
         previous_location = location[t]
         previous_orientation = orientation[t]
         previous_key_door_state = key_door_state[t]
+        location_observation_marginalcomponents = JointMarginalMetaComponent[]
+        orientation_observation_marginalcomponents = JointMarginalMetaComponent[]
+        key_door_state_observation_marginalcomponents = JointMarginalMetaComponent[]
+
         for x in 1:7, y in 1:7
             marginalstorage = JointMarginalStorage(Contingency(ones(number_type, size(observation_tensors[x, y]))))
             location_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 2)
-            location[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta([location_observation_marginalcomponent])}
+            push!(location_observation_marginalcomponents, location_observation_marginalcomponent)
             orientation_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 3)
-            orientation[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta([orientation_observation_marginalcomponent])}
+            push!(orientation_observation_marginalcomponents, orientation_observation_marginalcomponent)
             key_door_state_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 6)
-            key_door_state[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta([key_door_state_observation_marginalcomponent])}
+            push!(key_door_state_observation_marginalcomponents, key_door_state_observation_marginalcomponent)
             decomposed_tensor = observation_tensors[x, y]
             future_observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, current_orientation, key_location, door_location, current_key_door_state) where {meta=marginalstorage}
             future_observations[x, y] ~ Categorical(fill(number_type(1 / 5), 5))
         end
+        location[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(location_observation_marginalcomponents)}
+        orientation[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(orientation_observation_marginalcomponents)}
+        key_door_state[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(key_door_state_observation_marginalcomponents)}
     end
     location[end] ~ goal
     orientation[end] ~ Categorical(fill(number_type(1 / 4), 4))
@@ -70,7 +76,7 @@ end
 
 RxInfer.GraphPPL.default_constraints(::typeof(efe_minigrid_agent)) = efe_minigrid_agent_constraints()
 
-@initialization function efe_minigrid_agent_initialization(p_current_location, p_current_orientation, p_current_key_door_state, p_future_locations, p_future_orientations,  p_future_key_door_states, p_door_location, p_key_location)
+@initialization function efe_minigrid_agent_initialization(p_current_location, p_current_orientation, p_current_key_door_state, p_future_locations, p_future_orientations, p_future_key_door_states, p_door_location, p_key_location)
     μ(current_location) = p_current_location
     μ(current_orientation) = p_current_orientation
     μ(current_key_door_state) = p_current_key_door_state

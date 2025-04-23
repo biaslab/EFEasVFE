@@ -18,15 +18,14 @@ import RxInfer: Categorical
 
     # State inference
     current_location ~ DiscreteTransition(old_location, location_transition_tensor, old_orientation, key_location, door_location, old_key_door_state, action)
-    current_orientation ~ DiscreteTransition(old_orientation, orientation_transition_tensor, action)
     current_key_door_state ~ DiscreteTransition(old_key_door_state, key_door_transition_tensor, old_location, old_orientation, key_location, door_location, action)
 
     # Observation model with Parafac decomposed tensors
     for x in 1:7, y in 1:7
         decomposed_tensor = observation_tensors[x, y]
-        observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, current_orientation, key_location, door_location, current_key_door_state)
+        observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, orientation_observation, key_location, door_location, current_key_door_state)
     end
-    orientation_observation ~ DiscreteTransition(current_orientation, diageye(number_type, 4))
+    current_orientation ~ DiscreteTransition(orientation_observation, diageye(number_type, 4))
 
     # Planning (Active Inference)
     previous_location = current_location
@@ -55,7 +54,7 @@ end
 
 RxInfer.GraphPPL.default_constraints(::typeof(klcontrol_minigrid_agent)) = klcontrol_minigrid_agent_constraints()
 
-@initialization function klcontrol_minigrid_agent_initialization(p_current_location, p_current_orientation, p_current_key_door_state, p_future_locations, p_future_orientations,  p_future_key_door_states, p_door_location, p_key_location)
+@initialization function klcontrol_minigrid_agent_initialization(p_current_location, p_current_orientation, p_current_key_door_state, p_future_locations, p_future_orientations, p_future_key_door_states, p_door_location, p_key_location)
     μ(current_location) = p_current_location
     μ(current_orientation) = p_current_orientation
     μ(current_key_door_state) = p_current_key_door_state

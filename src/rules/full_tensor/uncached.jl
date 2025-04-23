@@ -1,48 +1,43 @@
 using Tullio, LoopVectorization
 relu(x) = max(x, tiny)
 # Rules for observation model (q_out is pointmass)
-@rule DiscreteTransition(:in, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+@rule DiscreteTransition(:in, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, q_T1::PointMass{<:AbstractVector}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     out_idx = findfirst(isone, probvec(q_out))
-    veloga = view(eloga, out_idx, :, :, :, :, :)
+    T1_idx = findfirst(isone, probvec(q_T1))
+    veloga = view(eloga, out_idx, :, T1_idx, :, :, :)
 
-    @tullio out[i] := veloga[i, c, d, e, f] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
+    @tullio out[i] := veloga[i, d, e, f] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
     return Categorical(normalize!(relu.(out), 1); check_args=false)
 end
 
-@rule DiscreteTransition(:T1, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_in::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+@rule DiscreteTransition(:T2, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_in::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, q_T1::PointMass{<:AbstractVector}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     out_idx = findfirst(isone, probvec(q_out))
-    veloga = view(eloga, out_idx, :, :, :, :, :)
+    T1_idx = findfirst(isone, probvec(q_T1))
+    veloga = view(eloga, out_idx, :, T1_idx, :, :, :)
 
-    @tullio out[i] := veloga[b, i, c, d, e] * probvec(m_in)[b] * probvec(m_T2)[c] * probvec(m_T3)[d] * probvec(m_T4)[e]
+    @tullio out[i] := veloga[b, i, d, e] * probvec(m_in)[b] * probvec(m_T3)[d] * probvec(m_T4)[e]
     return Categorical(normalize!(relu.(out), 1); check_args=false)
 end
 
-@rule DiscreteTransition(:T2, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_in::Categorical, m_T1::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+@rule DiscreteTransition(:T3, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_in::Categorical, m_T2::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, q_T1::PointMass{<:AbstractVector}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     out_idx = findfirst(isone, probvec(q_out))
-    veloga = view(eloga, out_idx, :, :, :, :, :)
+    T1_idx = findfirst(isone, probvec(q_T1))
+    veloga = view(eloga, out_idx, :, T1_idx, :, :, :)
 
-    @tullio out[i] := veloga[b, c, i, d, e] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T3)[d] * probvec(m_T4)[e]
+    @tullio out[i] := veloga[b, d, i, e] * probvec(m_in)[b] * probvec(m_T2)[d] * probvec(m_T4)[e]
     return Categorical(normalize!(relu.(out), 1); check_args=false)
 end
 
-@rule DiscreteTransition(:T3, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+@rule DiscreteTransition(:T4, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_in::Categorical, m_T2::Categorical, m_T3::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, q_T1::PointMass{<:AbstractVector}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     out_idx = findfirst(isone, probvec(q_out))
-    veloga = view(eloga, out_idx, :, :, :, :, :)
+    T1_idx = findfirst(isone, probvec(q_T1))
+    veloga = view(eloga, out_idx, :, T1_idx, :, :, :)
 
-    @tullio out[i] := veloga[b, c, d, i, e] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T4)[e]
-    return Categorical(normalize!(relu.(out), 1); check_args=false)
-end
-
-@rule DiscreteTransition(:T4, Marginalisation) (q_out::PointMass{<:AbstractVector}, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
-    eloga = mean(q_a)
-    out_idx = findfirst(isone, probvec(q_out))
-    veloga = view(eloga, out_idx, :, :, :, :, :)
-
-    @tullio out[i] := veloga[b, c, d, e, i] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e]
+    @tullio out[i] := veloga[b, d, e, i] * probvec(m_in)[b] * probvec(m_T2)[d] * probvec(m_T3)[e]
     return Categorical(normalize!(relu.(out), 1); check_args=false)
 end
 

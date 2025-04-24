@@ -70,11 +70,11 @@ function plot_inference_results(inference_result, grid_size; save_path=nothing)
         linewidth=2)
 
     # 2. Current Location Belief
-    current_loc = last(inference_result.posteriors[:current_location]).p
+    current_loc = probvec(inference_result.posteriors[:current_location])
     p2 = plot_belief_grid(current_loc, grid_size, title="Current Location Belief")
 
     # 3. Orientation Belief
-    orientation = last(inference_result.posteriors[:current_orientation]).p
+    orientation = probvec(inference_result.posteriors[:current_orientation])
     p3 = bar(["→", "↓", "←", "↑"],
         orientation,
         title="Orientation Belief",
@@ -82,7 +82,7 @@ function plot_inference_results(inference_result, grid_size; save_path=nothing)
         ylim=(0, 1))
 
     # 4. Key/Door State Belief
-    key_door = last(inference_result.posteriors[:current_key_door_state]).p
+    key_door = probvec(inference_result.posteriors[:current_key_door_state])
     p4 = bar(["No key", "Has key", "Door open"],
         key_door,
         title="Key/Door State Belief",
@@ -173,10 +173,10 @@ including location, orientation, key/door state, and action probabilities for ea
 """
 function animate_trajectory_belief(inference_result, grid_size; fps=2, save_path=nothing)
     # Get the final trajectory beliefs
-    final_location_beliefs = last(inference_result.posteriors[:location])
-    final_orientation_beliefs = last(inference_result.posteriors[:orientation])
-    final_key_door_beliefs = last(inference_result.posteriors[:key_door_state])
-    action_probabilities = last(inference_result.posteriors[:u])
+    final_location_beliefs = inference_result.posteriors[:location]
+    final_orientation_beliefs = inference_result.posteriors[:orientation]
+    final_key_door_beliefs = inference_result.posteriors[:key_door_state]
+    action_probabilities = inference_result.posteriors[:u]
 
     n_timesteps = length(final_location_beliefs)
 

@@ -26,7 +26,7 @@ include("rules/sparse_array/rules.jl")
 
 # Re-export commonly used functions
 export run_minigrid_agent, MinigridConfig, plot_free_energy, plot_posteriors,
-    reset_environment, step_environment, get_action_space, EnvironmentError
+    create_environment, step_environment, close_environment, EnvironmentError
 
 # Export visualization functions
 export plot_belief_grid, plot_inference_results, animate_belief_evolution

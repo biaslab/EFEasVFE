@@ -140,6 +140,24 @@ end
 end
 
 # Rules for observation model (q_out is pointmass)
+@marginalrule DiscreteTransition(:in_T2_T3_T4) (q_out::PointMass, m_in::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, q_T1::PointMass{<:AbstractVector}, meta::Any) where {T} = begin
+    eloga = mean(q_a)
+    out_idx = findfirst(isone, probvec(q_out))
+    T1_idx = findfirst(isone, probvec(q_T1))
+    veloga = view(eloga, out_idx, :, T1_idx, :, :, :)
+    @tullio result[b, d, e, f] := veloga[b, d, e, f] * probvec(m_in)[b] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
+    return Contingency(relu.(result))
+end
+
+# Rules for observation model (q_out is pointmass)
+@marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+    eloga = mean(q_a)
+    @tullio result[a, b, c, d, e, f] := eloga[a, b, c, d, e, f] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
+    return Contingency(relu.(result))
+end
+
+
+# Rules for observation model (q_out is pointmass)
 @marginalrule DiscreteTransition(:in_T1_T2_T3_T4) (q_out::PointMass, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     @tullio result[b, c, d, e, f] := eloga[a, b, c, d, e, f] * probvec(q_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
@@ -200,8 +218,14 @@ end
 # Marginals for JointMarginalMeta
 
 # Rules for observation model (q_out is pointmass)
-@marginalrule DiscreteTransition(:in_T1_T2_T3_T4) (q_out::PointMass, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::JointMarginalStorage) where {T} = begin
-    marginal = @call_marginalrule DiscreteTransition(:in_T1_T2_T3_T4) (q_out=q_out, m_in=m_in, m_T1=m_T1, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, q_a=q_a, meta=nothing)
+@marginalrule DiscreteTransition(:in_T2_T3_T4) (q_out::PointMass, m_in::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, q_T1::PointMass{<:AbstractVector}, meta::JointMarginalStorage) where {T} = begin
+    marginal = @call_marginalrule DiscreteTransition(:in_T2_T3_T4) (q_out=q_out, m_in=m_in, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, q_a=q_a, q_T1=q_T1, meta=nothing)
+    set_marginal!(meta, marginal)
+    return marginal
+end
+
+@marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::JointMarginalStorage) where {T} = begin
+    marginal = @call_marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out=m_out, m_in=m_in, m_T1=m_T1, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, q_a=q_a, meta=nothing)
     set_marginal!(meta, marginal)
     return marginal
 end

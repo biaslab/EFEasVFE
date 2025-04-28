@@ -162,7 +162,7 @@ end
         @test position_to_index(env.agent_position) == 2
         @test pos_obs == [0.0, 1.0, 0.0, 0.0, 0.0] # One-hot for position 2
         @test reward_cue == [0.5, 0.5] # Uncertain at junction
-        @test reward === nothing # No reward at junction
+        @test reward === 0.0 # No reward at junction
 
         # Move west to left arm
         pos_obs, reward_cue, reward = step!(env, MazeAction(West()))
@@ -183,7 +183,7 @@ end
         @test env.agent_position == (2, 3) # Top middle
         @test position_to_index(env.agent_position) == 4
         @test pos_obs == [0.0, 0.0, 0.0, 1.0, 0.0] # One-hot for position 4
-        @test reward === nothing # No reward at top middle
+        @test reward === 0.0 # No reward at top middle
     end
 
     @testset "Starting at Middle Junction" begin
@@ -261,7 +261,7 @@ end
         # Navigate to right arm
         pos_obs, reward_cue, reward = step!(env_right, MazeAction(East())) # To middle
         @test env_right.agent_position == (2, 3) # At top middle
-        @test reward === nothing # No reward in middle position
+        @test reward === 0.0 # No reward in middle position
         pos_obs, reward_cue, reward = step!(env_right, MazeAction(East())) # To right arm
         @test env_right.agent_position == (3, 3) # At top right
         @test reward == 1.0 # Negative reward at right with :right setting

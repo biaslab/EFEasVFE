@@ -19,6 +19,8 @@ using EFEasVFE
 using Plots
 
 import EFEasVFE: create_environment, execute_initial_action, step_environment, initialize_beliefs, convert_frame, execute_step
+import EFEasVFE: efe_minigrid_agent, efe_minigrid_agent_constraints, efe_minigrid_agent_initialization
+import EFEasVFE: klcontrol_minigrid_agent, klcontrol_minigrid_agent_constraints, klcontrol_minigrid_agent_initialization
 
 function parse_command_line()
     s = ArgParseSettings()
@@ -55,6 +57,9 @@ function parse_command_line()
         action = :store_true
         "--sparse-tensor"
         help = "Use sparse representation for transition and observation tensors"
+        action = :store_true
+        "--klcontrol"
+        help = "Use KL control agent instead of EFE agent"
         action = :store_true
     end
 
@@ -178,7 +183,8 @@ function main()
         "gridsize_$(config.grid_size)_" *
         "seed_$(config.seed)_" *
         "iterations_$(config.n_iterations)_" *
-        "sparse_tensor_$(args["sparse-tensor"])"
+        "sparse_tensor_$(args["sparse-tensor"])_" *
+        "agent_$(args["klcontrol"] ? "klcontrol" : "efe")"
     ))
     @info "Initialized environment"
     # Initialize beliefs and tensors
@@ -202,12 +208,18 @@ function main()
         @info "Saved initial frame"
     end
     @info "Starting inference..."
+
+    # Select the agent model, constraints, and initialization based on the --klcontrol flag
+    agent_model = args["klcontrol"] ? klcontrol_minigrid_agent : efe_minigrid_agent
+    agent_constraints = args["klcontrol"] ? klcontrol_minigrid_agent_constraints : efe_minigrid_agent_constraints
+    agent_initialization = args["klcontrol"] ? klcontrol_minigrid_agent_initialization : efe_minigrid_agent_initialization
+
     # Execute a single step with debug options
     next_action, new_env_state, inference_result = execute_step(
         env_state,
         action,
         beliefs,
-        efe_minigrid_agent,
+        agent_model,
         tensors,
         config,
         goal,
@@ -215,8 +227,8 @@ function main()
         config.time_horizon,
         nothing,  # no previous result
         session_id;
-        constraints_fn=efe_minigrid_agent_constraints,
-        initialization_fn=efe_minigrid_agent_initialization,
+        constraints_fn=agent_constraints,
+        initialization_fn=agent_initialization,
         free_energy=true,  # Enable free energy tracking
         showprogress=true,  # Show inference progress,
         options=(force_marginal_computation=true,

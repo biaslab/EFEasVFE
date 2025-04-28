@@ -172,8 +172,13 @@ function main()
     session_id = env_response["session_id"]
 
     # Create results directory with grid size, seed, iterations and sparse-tensor info
+    timestamp = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")
     results_dir = mkpath(datadir("debug",
-        "grid$(config.grid_size)_seed$(config.seed)_iter$(config.n_iterations)_sparsetensor$(args["sparse-tensor"])"
+        timestamp * "_" *
+        "gridsize_$(config.grid_size)_" *
+        "seed_$(config.seed)_" *
+        "iterations_$(config.n_iterations)_" *
+        "sparse_tensor_$(args["sparse-tensor"])"
     ))
     @info "Initialized environment"
     # Initialize beliefs and tensors
@@ -198,11 +203,11 @@ function main()
     end
     @info "Starting inference..."
     # Execute a single step with debug options
-    action, new_env_state, inference_result = execute_step(
+    next_action, new_env_state, inference_result = execute_step(
         env_state,
         action,
         beliefs,
-        klcontrol_minigrid_agent,
+        efe_minigrid_agent,
         tensors,
         config,
         goal,
@@ -210,8 +215,8 @@ function main()
         config.time_horizon,
         nothing,  # no previous result
         session_id;
-        constraints_fn=klcontrol_minigrid_agent_constraints,
-        initialization_fn=klcontrol_minigrid_agent_initialization,
+        constraints_fn=efe_minigrid_agent_constraints,
+        initialization_fn=efe_minigrid_agent_initialization,
         free_energy=true,  # Enable free energy tracking
         showprogress=true,  # Show inference progress,
         options=(force_marginal_computation=true,
@@ -219,7 +224,6 @@ function main()
         # Add any other inference kwargs as needed
     )
     @info "Inference completed"
-    next_action = mode(first(inference_result.posteriors[:u]))
     env_action = EFEasVFE.convert_action(next_action)
 
     # Plot and save inference results
@@ -233,12 +237,12 @@ function main()
     # Create and save animation if requested
     if args["save-animation"]
         @info "Creating belief evolution animation..."
-        # animate_belief_evolution(
-        #     inference_result,
-        #     config.grid_size,
-        #     fps=2,
-        #     save_path=joinpath(results_dir, "belief_evolution.gif")
-        # )
+        animate_belief_evolution(
+            inference_result,
+            config.grid_size,
+            fps=2,
+            save_path=joinpath(results_dir, "belief_evolution.gif")
+        )
         animate_trajectory_belief(
             inference_result,
             config.grid_size,

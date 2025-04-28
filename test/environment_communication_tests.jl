@@ -20,17 +20,6 @@
         @test contains(error_str, "Response: Not found")
     end
 
-    @testset "check_response" begin
-        # Test successful response
-        response = HTTP.Response(200, "{\"test\": \"success\"}")
-        result = check_response(response)
-        @test result == Dict("test" => "success")
-
-        # Test error response
-        response = HTTP.Response(404, "Not found")
-        @test_throws EnvironmentError check_response(response)
-    end
-
     @testset "Environment API" begin
         # Test create environment
         env_response = create_environment(5, render_mode="rgb_array", seed=UInt32(42))
@@ -54,7 +43,7 @@
 
     @testset "Error Handling" begin
         # Create a test environment
-        env_response = create_environment(5, render_mode="rgb_array")
+        env_response = create_environment(5, render_mode="rgb_array", seed=UInt32(123))
         session_id = env_response["session_id"]
 
         # Test invalid action

@@ -108,12 +108,12 @@ function get_initialization(initialization_fn, beliefs, previous_result::Nothing
 end
 
 function get_initialization(initialization_fn, beliefs, previous_result)
-    current_location_belief = first(previous_result.posteriors[:location])
-    future_location_beliefs = previous_result.posteriors[:location][2:end]
-    current_orientation_belief = first(previous_result.posteriors[:orientation])
-    future_orientation_beliefs = previous_result.posteriors[:orientation][2:end]
-    current_key_door_state_belief = first(previous_result.posteriors[:key_door_state])
-    future_key_door_state_beliefs = previous_result.posteriors[:key_door_state][2:end]
+    current_location_belief = first(last(previous_result.posteriors[:location]))
+    future_location_beliefs = last(previous_result.posteriors[:location])[2:end]
+    current_orientation_belief = first(last(previous_result.posteriors[:orientation]))
+    future_orientation_beliefs = last(previous_result.posteriors[:orientation])[2:end]
+    current_key_door_state_belief = first(last(previous_result.posteriors[:key_door_state]))
+    future_key_door_state_beliefs = last(previous_result.posteriors[:key_door_state])[2:end]
     door_location_belief = beliefs.door_location
     key_location_belief = beliefs.key_location
     return initialization_fn(current_location_belief, current_orientation_belief, current_key_door_state_belief, future_location_beliefs, future_orientation_beliefs, future_key_door_state_beliefs, door_location_belief, key_location_belief)
@@ -185,24 +185,23 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
         ),
         constraints=constraints_fn(),
         callbacks=callbacks,
-        returnvars=KeepLast(),
         iterations=config.n_iterations,
         initialization=initialization;
         inference_kwargs...  # Pass through any additional inference arguments
     )
 
-    next_action = mode(first(result.posteriors[:u]))
+    next_action = mode(first(last(result.posteriors[:u])))
     env_action = convert_action(next_action)
     @debug "Executing action: $next_action with environment encoding $env_action"
     env_state = step_environment(env_action, session_id)
     @debug "Received reward: $(env_state["reward"])"
 
     # Update beliefs
-    beliefs.location = result.posteriors[:current_location]
-    beliefs.orientation = result.posteriors[:current_orientation]
-    beliefs.key_door_state = result.posteriors[:current_key_door_state]
-    beliefs.key_location = result.posteriors[:key_location]
-    beliefs.door_location = result.posteriors[:door_location]
+    beliefs.location = last(result.posteriors[:current_location])
+    beliefs.orientation = last(result.posteriors[:current_orientation])
+    beliefs.key_door_state = last(result.posteriors[:current_key_door_state])
+    beliefs.key_location = last(result.posteriors[:key_location])
+    beliefs.door_location = last(result.posteriors[:door_location])
 
     return next_action, env_state, result  # Return the inference result as well
 end

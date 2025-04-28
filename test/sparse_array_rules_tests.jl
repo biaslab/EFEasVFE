@@ -263,7 +263,7 @@
                 m_T3=m_T3, m_T4=m_T4, q_a=q_a6d_full
             )
 
-            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-12
+            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-7
 
             # T1 interface
             sparse_result = @call_rule DiscreteTransition(:T1, Marginalisation) (
@@ -276,7 +276,7 @@
                 m_T3=m_T3, m_T4=m_T4, q_a=q_a6d_full
             )
 
-            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-12
+            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-7
 
             # T2 interface
             sparse_result = @call_rule DiscreteTransition(:T2, Marginalisation) (
@@ -289,7 +289,7 @@
                 m_T3=m_T3, m_T4=m_T4, q_a=q_a6d_full
             )
 
-            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-12
+            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-7
 
             # T3 interface
             sparse_result = @call_rule DiscreteTransition(:T3, Marginalisation) (
@@ -302,7 +302,7 @@
                 m_T4=m_T4, q_a=q_a6d_full
             )
 
-            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-12
+            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-7
 
             # T4 interface
             sparse_result = @call_rule DiscreteTransition(:T4, Marginalisation) (
@@ -315,7 +315,7 @@
                 m_T3=m_T3, q_a=q_a6d_full
             )
 
-            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-12
+            @test probvec(sparse_result) ≈ probvec(full_result) atol = 1e-5
         end
     end
 

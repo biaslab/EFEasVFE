@@ -317,5 +317,5 @@ function sparse_tensor_marginalize_6d(
         out[idx[out_dim]] += prob
     end
 
-    return Categorical(normalize!(relu.(out), 1))
+    return Categorical(normalize!(guard(out), 1))
 end

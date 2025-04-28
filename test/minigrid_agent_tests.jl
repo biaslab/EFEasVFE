@@ -9,7 +9,7 @@
     @testset "MinigridConfig" begin
         import EFEasVFE: validate_config
         # Test valid config
-        config = MinigridConfig(3, 10, 5, 3, 0.0, Float32, false, 42, false, "test")
+        config = MinigridConfig(3, 10, 5, 3, 0.0, Float32, false, 42, false, "test", false)
         @test config.grid_size == 3
         @test config.time_horizon == 10
         @test config.n_episodes == 5
@@ -18,11 +18,11 @@
         @test config.number_type == Float32
 
         # Test invalid configs
-        @test_throws ArgumentError validate_config(MinigridConfig(0, 10, 5, 3, 0.0, Float32, false, 42, false, "test"))  # grid_size <= 0
-        @test_throws ArgumentError validate_config(MinigridConfig(3, 0, 5, 3, 0.0, Float32, false, 42, false, "test"))   # time_horizon <= 0
-        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 0, 3, 0.0, Float32, false, 42, false, "test"))  # n_episodes <= 0
-        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 5, 0, 0.0, Float32, false, 42, false, "test"))  # n_iterations <= 0
-        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 5, 3, -1.0, Float32, false, 42, false, "test")) # wait_time < 0
+        @test_throws ArgumentError validate_config(MinigridConfig(0, 10, 5, 3, 0.0, Float32, false, 42, false, "test", false))  # grid_size <= 0
+        @test_throws ArgumentError validate_config(MinigridConfig(3, 0, 5, 3, 0.0, Float32, false, 42, false, "test", false))   # time_horizon <= 0
+        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 0, 3, 0.0, Float32, false, 42, false, "test", false))  # n_episodes <= 0
+        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 5, 0, 0.0, Float32, false, 42, false, "test", false))  # n_iterations <= 0
+        @test_throws ArgumentError validate_config(MinigridConfig(3, 10, 5, 3, -1.0, Float32, false, 42, false, "test", false)) # wait_time < 0
     end
 
     @testset "Cell Observation" begin
@@ -56,30 +56,36 @@
 
     @testset "Belief Initialization" begin
         import EFEasVFE: initialize_beliefs
+        using TinyHugeNumbers
 
         grid_size = 3
         beliefs = initialize_beliefs(grid_size, Float32)
 
+        # Calculate valid positions
+        valid_positions = grid_size^2 - 2 * grid_size
+
         # Test location belief
-        @test length(beliefs.location.p) == grid_size^2
-        @test all(beliefs.location.p .≈ Float32(1 / grid_size^2))
+        @test length(probvec(beliefs.location)) == grid_size^2
+        # The location belief should assign equal probabilities to valid positions and tiny to invalid ones
+        expected_value = Float32(1 / valid_positions)
+        @test count(x -> x ≈ expected_value, probvec(beliefs.location)) == valid_positions
+        @test count(x -> x ≈ tiny(Float32), probvec(beliefs.location)) == 2 * grid_size
 
         # Test orientation belief
-        @test length(beliefs.orientation.p) == 4
-        @test all(beliefs.orientation.p .≈ Float32(1 / 4))
+        @test length(probvec(beliefs.orientation)) == 4
+        @test all(probvec(beliefs.orientation) .≈ Float32(1 / 4))
 
         # Test key and door location beliefs
-        valid_positions = grid_size^2 - 2 * grid_size
-        @test length(beliefs.key_location.p) == valid_positions
-        @test length(beliefs.door_location.p) == valid_positions
-        @test all(beliefs.key_location.p .≈ Float32(1 / valid_positions))
-        @test all(beliefs.door_location.p .≈ Float32(1 / valid_positions))
+        @test length(probvec(beliefs.key_location)) == valid_positions
+        @test length(probvec(beliefs.door_location)) == valid_positions
+        @test all(probvec(beliefs.key_location) .≈ Float32(1 / valid_positions))
+        @test all(probvec(beliefs.door_location) .≈ Float32(1 / valid_positions))
 
         # Test key_door_state belief
-        @test length(beliefs.key_door_state.p) == 3
-        @test beliefs.key_door_state.p[1] ≈ 1.0f0 - 2 * tiny
-        @test beliefs.key_door_state.p[2] ≈ tiny
-        @test beliefs.key_door_state.p[3] ≈ tiny
+        @test length(probvec(beliefs.key_door_state)) == 3
+        @test probvec(beliefs.key_door_state)[1] ≈ 1.0f0 - 2 * tiny
+        @test probvec(beliefs.key_door_state)[2] ≈ tiny
+        @test probvec(beliefs.key_door_state)[3] ≈ tiny
     end
 
 

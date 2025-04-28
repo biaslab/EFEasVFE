@@ -94,14 +94,40 @@ function step_environment(action::Int, session_id::String)
                 ));
                 retry=false,  # we'll handle retries ourselves
                 connect_timeout=5,  # 5 second connection timeout
+                status_exception=false  # Don't throw HTTP exceptions, handle them ourselves
             )
-            return check_response(response)
+
+            # Check if response is successful (status code 200)
+            if response.status != 200
+                throw(EnvironmentError(
+                    "Environment step request failed",
+                    response.status,
+                    String(response.body)
+                ))
+            end
+
+            return JSON.parse(String(response.body))
         catch e
-            if attempt < 3
+            if e isa EnvironmentError
+                rethrow(e)
+            elseif e isa HTTP.Exceptions.StatusError
+                # Convert HTTP errors to EnvironmentError
+                throw(EnvironmentError(
+                    "Environment step request failed",
+                    e.status,
+                    String(e.response.body)
+                ))
+            elseif attempt < 3
                 sleep(0.1 * 2^(attempt - 1))  # exponential backoff: 0.1s, 0.2s, 0.4s
                 continue
+            else
+                # For other types of errors, wrap them in EnvironmentError
+                throw(EnvironmentError(
+                    "Environment communication failed",
+                    -1,
+                    string(e)
+                ))
             end
-            rethrow(e)
         end
     end
 end

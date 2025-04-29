@@ -710,75 +710,76 @@ function plot_tmaze(env::TMaze)
         axis=false,
         grid=false,
         ticks=false,
-        background_color=:white,
-        size=(500, 400),
+        background_color=MAZE_THEME.background,
+        size=(600, 600),
         frame=:none,
-        margin=5Plots.mm
+        margin=0Plots.mm,
     )
-
-    # Draw the maze background (light gray)
-    Plots.plot!(p, [0, 7], [0, 5], color=:white, linewidth=0, fill=true, fillcolor=:lightgray)
-
-    # Draw the T-maze corridor (white)
+    scale = 30
 
     # Vertical corridor
-    Plots.plot!(p, [3, 4], [1, 4], color=:white, linewidth=0, fill=true, fillcolor=:white)
+    Plots.plot!(p, [1, 2], [1, 4], color=MAZE_THEME.corridor, linewidth=0, fill=true, fillcolor=MAZE_THEME.corridor)
 
     # Horizontal corridor at top
-    Plots.plot!(p, [1, 6], [3, 4], color=:white, linewidth=0, fill=true, fillcolor=:white)
+    Plots.plot!(p, [0, 3], [3, 4], color=MAZE_THEME.corridor, linewidth=0, fill=true, fillcolor=MAZE_THEME.corridor)
 
     # Draw the outer walls of the maze (black)
     # Vertical corridor walls
-    Plots.plot!(p, [3, 3], [1, 3], color=:black, linewidth=2)  # Left vertical wall
-    Plots.plot!(p, [4, 4], [1, 3], color=:black, linewidth=2)  # Right vertical wall
+    Plots.plot!(p, [1, 1], [1, 3], color=MAZE_THEME.wall, linewidth=2)  # Left vertical wall
+    Plots.plot!(p, [2, 2], [1, 3], color=MAZE_THEME.wall, linewidth=2)  # Right vertical wall
 
     # Horizontal corridor top walls
-    Plots.plot!(p, [1, 6], [4, 4], color=:black, linewidth=2)  # Top horizontal wall
-    Plots.plot!(p, [1, 3], [3, 3], color=:black, linewidth=2)  # Bottom left horizontal wall
-    Plots.plot!(p, [4, 6], [3, 3], color=:black, linewidth=2)  # Bottom right horizontal wall
+    Plots.plot!(p, [0, 3], [4, 4], color=MAZE_THEME.wall, linewidth=2)  # Top horizontal wall
+    Plots.plot!(p, [0, 1], [3, 3], color=MAZE_THEME.wall, linewidth=2)  # Bottom left horizontal wall
+    Plots.plot!(p, [2, 3], [3, 3], color=MAZE_THEME.wall, linewidth=2)  # Bottom right horizontal wall
 
     # Bottom wall
-    Plots.plot!(p, [3, 4], [1, 1], color=:black, linewidth=2)
+    Plots.plot!(p, [1, 2], [1, 1], color=MAZE_THEME.wall, linewidth=2)
 
     # Left and right top walls
-    Plots.plot!(p, [1, 1], [3, 4], color=:black, linewidth=2)  # Left wall
-    Plots.plot!(p, [6, 6], [3, 4], color=:black, linewidth=2)  # Right wall
+    Plots.plot!(p, [0, 0], [3, 4], color=MAZE_THEME.wall, linewidth=2)  # Left wall
+    Plots.plot!(p, [3, 3], [3, 4], color=MAZE_THEME.wall, linewidth=2)  # Right wall
 
     # Draw reward locations with clear indicators
     reward_position = env.reward_position
 
     # The left reward location (left arm of the T)
-    left_color = reward_position == :left ? :green : :lightgray
-    Plots.scatter!(p, [2], [3.5], markersize=25, color=left_color, alpha=0.7)
-    Plots.annotate!(p, 2, 3.5, Plots.text("L", :black, 14,))
+    left_color = reward_position == :left ? MAZE_THEME.reward_positive : MAZE_THEME.reward_negative
+    Plots.scatter!(p, [0.5], [3.5], markersize=ceil(Int, scale), color=left_color, alpha=0.7)
 
     # The right reward location (right arm of the T)
-    right_color = reward_position == :right ? :green : :lightgray
-    Plots.scatter!(p, [5], [3.5], markersize=25, color=right_color, alpha=0.7)
-    Plots.annotate!(p, 5, 3.5, Plots.text("R", :black, 14,))
+    right_color = reward_position == :right ? MAZE_THEME.reward_positive : MAZE_THEME.reward_negative
+    Plots.scatter!(p, [2.5], [3.5], markersize=ceil(Int, scale), color=right_color, alpha=0.7)
+
+    # Draw cue location (bottom middle)
+    Plots.scatter!(p, [1.5], [1.5], markersize=ceil(Int, scale), color=MAZE_THEME.cue, alpha=0.7)
 
     # Convert agent position to plot coordinates
     x, y = 0, 0
     agent_pos = env.agent_position
 
-    if agent_pos == (2, 1)      # Bottom
-        x, y = 3.5, 1.5
-    elseif agent_pos == (2, 2)  # Middle
-        x, y = 3.5, 2.5
-    elseif agent_pos == (1, 3)  # Top left
-        x, y = 2, 3.5
-    elseif agent_pos == (2, 3)  # Top middle
-        x, y = 3.5, 3.5
-    elseif agent_pos == (3, 3)  # Top right
-        x, y = 5, 3.5
+    if agent_pos != (2, 1)
+        Plots.annotate!(p, 1.5, 1.5, Plots.text("Cue", :black, ceil(Int, scale / 2)))
     end
 
-    # Draw agent as a red circle with a black border
-    Plots.scatter!(p, [x], [y], markersize=25, color=:red, markerstrokewidth=1, markerstrokecolor=:black)
+    if agent_pos == (2, 1)      # Bottom
+        x, y = 1.5, 1.5
+    elseif agent_pos == (2, 2)  # Middle
+        x, y = 1.5, 2.5
+    elseif agent_pos == (1, 3)  # Top left
+        x, y = 0.5, 3.5
+    elseif agent_pos == (2, 3)  # Top middle
+        x, y = 1.5, 3.5
+    elseif agent_pos == (3, 3)  # Top right
+        x, y = 2.5, 3.5
+    end
+
+    # Draw agent as a circle with a black border
+    Plots.scatter!(p, [x], [y], markersize=ceil(Int, (2 / 3) * scale), color=MAZE_THEME.agent, markerstrokewidth=1, markerstrokecolor=MAZE_THEME.wall)
 
     # Add an informative caption showing the reward location
     caption = "TMaze - Reward location: $(uppercase(string(reward_position)))"
-    Plots.title!(p, caption, titlefontsize=12)
+    Plots.title!(p, caption, titlefontsize=ceil(Int, scale / 2))
 
     return p
 end

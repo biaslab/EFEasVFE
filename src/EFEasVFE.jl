@@ -3,6 +3,7 @@ module EFEasVFE
 using DrWatson
 
 # Include all submodules
+include("utils/colors.jl")
 include("meta/jointmarginalmeta.jl")
 include("environments/minigrid.jl")
 include("environments/tmaze.jl")
@@ -30,7 +31,7 @@ RxInfer.ReactiveMP.sdtype(any::RxInfer.ReactiveMP.StandaloneDistributionNode) = 
 
 # Re-export commonly used functions
 export run_minigrid_agent, MinigridConfig, plot_free_energy, plot_posteriors,
-    create_environment, step_environment, close_environment, EnvironmentError
+    create_environment, step_environment, close_environment, EnvironmentError, MAZE_THEME
 
 # Export TMaze types and functions
 export North, East, South, West, MazeAction, TMaze

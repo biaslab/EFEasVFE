@@ -513,31 +513,44 @@ function visualize_stochastic_maze(env::StochasticMaze)
         legend=false,
         grid=false,
         ticks=false,
-        border=:none
+        border=:none,
+        background=MAZE_THEME.background
     )
+
+    scale = 15
+
+    # Draw border walls
+    # Left wall
+    plot!(p, [0, 0], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=2)
+    # Right wall  
+    plot!(p, [grid_size_x, grid_size_x], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=2)
+    # Bottom wall
+    plot!(p, [0, grid_size_x], [0, 0], color=MAZE_THEME.wall, linewidth=2)
+    # Top wall
+    plot!(p, [0, grid_size_x], [grid_size_y, grid_size_y], color=MAZE_THEME.wall, linewidth=2)
 
     # Draw grid lines
     for x in 0:grid_size_x
-        plot!(p, [x, x], [0, grid_size_y], color=:black, linewidth=0.5, alpha=0.7)
+        plot!(p, [x, x], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7)
     end
     for y in 0:grid_size_y
-        plot!(p, [0, grid_size_x], [y, y], color=:black, linewidth=0.5, alpha=0.7)
+        plot!(p, [0, grid_size_x], [y, y], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7)
     end
 
-    # Plot sink states in red
+    # Plot sink states
     for (x, y) in env.sink_states
         # Plot a filled rectangle for sink states
         x_coords = [x - 1, x, x, x - 1, x - 1]
         y_coords = [grid_size_y - y, grid_size_y - y, grid_size_y - y + 1, grid_size_y - y + 1, grid_size_y - y]
-        plot!(p, x_coords, y_coords, color=:red, alpha=0.3, fill=true)
+        plot!(p, x_coords, y_coords, color=MAZE_THEME.sink, alpha=0.3, fill=true)
     end
 
     # Plot reward states
     for (state, reward) in env.reward_states
         x, y = state_to_xy(state, grid_size_x)
-        color = reward > 0 ? :green : :red
+        color = reward > 0 ? MAZE_THEME.reward_positive : MAZE_THEME.reward_negative
         opacity = min(abs(reward), 1.0) # Use absolute value of reward for opacity, capped at 1.0
-        scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity, markersize=20)
+        scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity, markersize=ceil(Int, scale))
     end
 
     # Plot observation noise
@@ -548,7 +561,7 @@ function visualize_stochastic_maze(env::StochasticMaze)
             # Plot a filled rectangle for noisy states
             x_coords = [x - 1, x, x, x - 1, x - 1]
             y_coords = [grid_size_y - y, grid_size_y - y, grid_size_y - y + 1, grid_size_y - y + 1, grid_size_y - y]
-            plot!(p, x_coords, y_coords, color=:lightblue, alpha=noise, fill=true)
+            plot!(p, x_coords, y_coords, color=MAZE_THEME.noisy, alpha=noise, fill=true)
         end
     end
 
@@ -564,13 +577,13 @@ function visualize_stochastic_maze(env::StochasticMaze)
                 grid_size_y - y + 0.32 + i * 0.25,
                 grid_size_y - y + 0.25 + i * 0.25
             ]
-            plot!(p, x_coords, y_coords, color=:brown, alpha=0.6, fill=true)
+            plot!(p, x_coords, y_coords, color=MAZE_THEME.stochastic, alpha=0.6, fill=true)
         end
     end
 
     # Plot agent
     x, y = state_to_xy(env.agent_state, grid_size_x)
-    scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=:blue, markersize=20)
+    scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=MAZE_THEME.agent, markersize=ceil(Int, (2 / 3) * scale))
 
     return p
 end

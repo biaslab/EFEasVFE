@@ -251,6 +251,29 @@
             @test !isfile(video_path)
         end
 
+        @testset "Individual frame saving" begin
+            import EFEasVFE: save_minigrid_frame
+
+            # Create a test frame
+            test_frame = rand(UInt8, 84, 84, 3)
+
+            # Create a directory for test frames
+            frames_dir = joinpath(test_dir, "frames")
+            mkpath(frames_dir)
+
+            # Save the frame
+            frame_path = save_minigrid_frame(test_frame, "test_model", 123, 42, frames_dir)
+
+            # Verify the frame file was created
+            @test isfile(frame_path)
+
+            # Verify correct filename format
+            @test contains(frame_path, "test_model_episode_123_frame_042.png")
+
+            # Clean up
+            rm(frame_path)
+        end
+
         @testset "Different frame sizes" begin
             # Test recording frames of different sizes
             frames = [

@@ -8,8 +8,9 @@ import RxInfer: Categorical
 using StableRNGs
 using VideoIO
 using Colors  # Add Colors.jl for RGB{N0f8} support
+using FileIO  # Add FileIO for saving individual frames
 
-export MinigridConfig, run_minigrid_agent, create_observation_tensor, convert_action
+export MinigridConfig, run_minigrid_agent, create_observation_tensor, convert_action, save_minigrid_frame
 
 Base.@kwdef struct MinigridConfig{T<:AbstractFloat}
     grid_size::Int
@@ -118,8 +119,6 @@ function get_initialization(initialization_fn, beliefs, previous_result)
     key_location_belief = beliefs.key_location
     return initialization_fn(current_location_belief, current_orientation_belief, current_key_door_state_belief, future_location_beliefs, future_orientation_beliefs, future_key_door_state_beliefs, door_location_belief, key_location_belief)
 end
-
-
 
 """
     execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, session_id::String; 
@@ -270,7 +269,42 @@ function record_episode_to_video(frames::Vector{Array{UInt8,3}}, video_path::Str
 end
 
 """
-    run_single_episode(model, tensors, config, goal, callbacks, rng; 
+    save_minigrid_frame(frame::Array{UInt8,3}, model_name::String, seed::Int, timestep::Int, output_dir::String)
+
+Save a single Minigrid frame as a PNG file.
+
+# Arguments
+- `frame::Array{UInt8,3}`: The RGB frame to save (height, width, 3) UInt8 array
+- `model_name::String`: Name of the model for file naming
+- `seed::Int`: Random seed for the episode for file naming
+- `timestep::Int`: Current timestep (will be formatted with leading zeros)
+- `output_dir::String`: Directory to save the frame in
+
+# Returns
+- `filepath::String`: The full path to the saved file
+"""
+function save_minigrid_frame(frame::Array{UInt8,3}, model_name::String, seed, timestep::Int, output_dir::String)
+    # Format the timestep with leading zeros for proper sorting
+    timestep_str = lpad(timestep, 3, "0")
+
+    # Create the filename with format model_name_episode_seed_frame_NNN.png
+    filename = "$(model_name)_episode_$(seed)_frame_$(timestep_str).png"
+
+    # Full path to save the frame
+    filepath = joinpath(output_dir, filename)
+
+    # Convert UInt8 array to RGB{N0f8} for saving with FileIO
+    height, width, _ = size(frame)
+    rgb_frame = RGB{Colors.N0f8}.(frame[:, :, 1] ./ 255, frame[:, :, 2] ./ 255, frame[:, :, 3] ./ 255)
+
+    # Save the frame as PNG
+    FileIO.save(filepath, rgb_frame)
+
+    return filepath
+end
+
+"""
+    run_single_episode(model, tensors, config, goal, callbacks, seed; 
                         constraints_fn=klcontrol_minigrid_agent_constraints,
                         initialization_fn=klcontrol_minigrid_agent_initialization,
                         record=false,
@@ -284,7 +318,7 @@ Run a single episode of the minigrid environment.
 - `config`: Configuration parameters
 - `goal`: Goal distribution
 - `callbacks`: Optional callback functions
-- `rng`: Random number generator
+- `seed`: Random seed for the episode
 - `constraints_fn`: Function that returns the constraints for inference (default: klcontrol_minigrid_agent_constraints)
 - `initialization_fn`: Function that returns the initialization for inference (default: klcontrol_minigrid_agent_initialization)
 - `record`: Whether to record the episode to video
@@ -311,6 +345,21 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
         # Initialize frames collection if recording
         frames = record ? Vector{Array{UInt8,3}}() : nothing
 
+        # Get model name for frame saving
+        model_name = try
+            string(nameof(model))
+        catch
+            "unknown_model"
+        end
+
+        # Set up the directory for saving individual frames if requested
+        frames_dir = nothing
+        if record
+            # Create directory structure: results/minigrid/experiment_name/model_name/episode_seed
+            frames_dir = datadir("results", "minigrid", config.experiment_name, model_name, "episode_$(seed)")
+            mkpath(frames_dir)
+        end
+
         beliefs = initialize_beliefs_minigrid(config.grid_size, config.number_type)
         reward = 0
         env_state = execute_initial_action(config.grid_size, session_id)
@@ -319,7 +368,13 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
 
         # Store initial frame if recording
         if record
-            push!(frames, convert_frame(env_state["frame"]))
+            initial_frame = convert_frame(env_state["frame"])
+            push!(frames, initial_frame)
+
+            # Save individual frame as PNG
+            if !isnothing(frames_dir)
+                save_minigrid_frame(initial_frame, model_name, seed, 0, frames_dir)
+            end
         end
 
         for t in config.time_horizon:-1:1
@@ -334,7 +389,14 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
             previous_result = result
 
             if record
-                push!(frames, convert_frame(env_state["frame"]))
+                current_frame = convert_frame(env_state["frame"])
+                push!(frames, current_frame)
+
+                # Save individual frame as PNG
+                if !isnothing(frames_dir)
+                    current_timestep = config.time_horizon - t + 1
+                    save_minigrid_frame(current_frame, model_name, seed, current_timestep, frames_dir)
+                end
             end
 
             env_state["terminated"] && break
@@ -343,13 +405,8 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
 
         # Save video if recording
         if record && !isnothing(frames)
-            # Get model name from function object if possible
-            model_name = try
-                string(nameof(model))
-            catch
-                "unknown_model"
-            end
-            record_episode_to_video(frames, datadir("results", "minigrid", config.experiment_name, "$(model_name)_episode_$(config.n_episodes).mp4"))
+            video_path = datadir("results", "minigrid", config.experiment_name, "$(model_name)_episode_$(seed).mp4")
+            record_episode_to_video(frames, video_path)
         end
 
         return reward

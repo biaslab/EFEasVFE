@@ -9,25 +9,132 @@ using StableRNGs
 using Dates
 using JSON
 using FileIO
+using ArgParse
+using Plots
+pgfplotsx()
 import RxInfer: Categorical
 using EFEasVFE
 
+"""
+    parse_command_line()
+
+Parse command line arguments for the stochastic maze experiment.
+"""
+function parse_command_line()
+    s = ArgParseSettings()
+    s.description = "Run stochastic maze experiment with specified parameters"
+    s.version = "1.0.0"
+
+    @add_arg_table! s begin
+        "--time-horizon"
+        help = "Maximum number of steps per episode (default: 11)"
+        arg_type = Int
+        default = 10
+        "--n-episodes", "-e"
+        help = "Number of episodes to run (default: 100)"
+        arg_type = Int
+        default = 100
+        "--n-iterations", "-i"
+        help = "Number of iterations per step (default: 10)"
+        arg_type = Int
+        default = 10
+        "--wait-time", "-w"
+        help = "Time to wait between steps in seconds (default: 0.0)"
+        arg_type = Float64
+        default = 0.0
+        "--number-type", "-n"
+        help = "Number type to use (default: Float64)"
+        arg_type = Symbol
+        default = :Float64
+        "--seed", "-s"
+        help = "Random seed for the experiment"
+        arg_type = Int
+        default = 123
+        "--record-episode", "-r"
+        help = "Record episode frames for visualization"
+        action = :store_true
+        "--experiment-name", "-x"
+        help = "Name for the experiment (default: timestamp-based)"
+        arg_type = String
+        default = "stochastic_maze_$(Dates.format(now(), "yyyymmdd_HHMMSS"))"
+        "--tikz"
+        help = "Use PGFPlotsX backend and save frames as TikZ files instead of PNG"
+        action = :store_true
+        "--debug", "-d"
+        help = "Enable debug mode"
+        action = :store_true
+        "--save-results"
+        help = "Save experiment results"
+        action = :store_true
+        "--no-save-results"
+        help = "Don't save experiment results"
+        action = :store_true
+    end
+
+    args = parse_args(s)
+
+    # Validate parameters
+    args["time-horizon"] > 0 || throw(ArgumentError("time-horizon must be positive"))
+    args["n-episodes"] > 0 || throw(ArgumentError("n-episodes must be positive"))
+    args["n-iterations"] > 0 || throw(ArgumentError("n-iterations must be positive"))
+    args["wait-time"] >= 0 || throw(ArgumentError("wait-time must be non-negative"))
+
+    # Convert number type string to actual type
+    number_type = if args["number-type"] == :Float32
+        Float32
+    elseif args["number-type"] == :Float64
+        Float64
+    elseif args["number-type"] == :Float16
+        Float16
+    else
+        throw(ArgumentError("Unsupported number type: $(args["number-type"])"))
+    end
+
+    # Handle save_results argument logic
+    save_results = true
+    if args["no-save-results"]
+        save_results = false
+    elseif args["save-results"]
+        save_results = true
+    end
+
+    return (
+        time_horizon=args["time-horizon"],
+        n_episodes=args["n-episodes"],
+        n_iterations=args["n-iterations"],
+        wait_time=args["wait-time"],
+        number_type=number_type,
+        seed=args["seed"],
+        record_episode=args["record-episode"],
+        experiment_name=args["experiment-name"],
+        debug_mode=args["debug"],
+        save_results=save_results,
+        use_tikz=args["tikz"]
+    )
+end
+
 # Set up experiment parameters
 function run_stochastic_maze_experiment(;
-    T::Int=9,
+    T::Int=11,
     n_episodes::Int=100,
-    n_iterations::Int=3,
-    visualize::Bool=false,
+    n_iterations::Int=10,
     wait_time::Float64=0.0,
     record_episode::Bool=false,
     seed::Int=123,
     number_type::Type{<:AbstractFloat}=Float64,
     experiment_name::String="stochastic_maze_$(Dates.format(now(), "yyyymmdd_HHMMSS"))",
-    parallel::Bool=false,
     log_dir::String=datadir("logs", "stochastic_maze"),
     save_results::Bool=true,
-    debug_mode::Bool=false
+    debug_mode::Bool=false,
+    use_tikz::Bool=false
 )
+    # Set the appropriate plotting backend
+    if use_tikz
+        pgfplotsx()
+    else
+        gr()
+    end
+
     # Create directory for logs
     results_dir = datadir("results", "stochastic_maze", experiment_name)
 
@@ -55,11 +162,9 @@ function run_stochastic_maze_experiment(;
         n_iterations=n_iterations,
         wait_time=wait_time,
         number_type=number_type,
-        visualize=visualize,
         seed=seed,
         record_episode=record_episode,
-        experiment_name=experiment_name,
-        parallel=parallel
+        experiment_name=experiment_name
     )
 
     # Generate environment tensors
@@ -101,79 +206,28 @@ function run_stochastic_maze_experiment(;
     kl_episodic_data = []
     kl_rewards = zeros(config.n_episodes)
 
-    if parallel
-        thread_count = Threads.nthreads()
-        log_info("Running with parallelization using $thread_count threads")
-        episode_seeds = rand(StableRNG(seed), UInt32, config.n_episodes)
+    episode_seeds = rand(StableRNG(seed), UInt32, config.n_episodes)
 
-        episodic_data_lock = ReentrantLock()
+    @showprogress desc = "Running KL-Control episodes: " for i in 1:config.n_episodes
+        episode_seed = episode_seeds[i]
 
-        Threads.@threads for i in 1:config.n_episodes
-            episode_seed = episode_seeds[i]
-            local_config = config
+        reward, episode_data = run_stochastic_maze_single_episode(
+            klcontrol_stochastic_maze_agent,
+            tensors,
+            config,
+            goal_distribution,
+            callbacks,
+            episode_seed;
+            constraints_fn=klcontrol_stochastic_maze_agent_constraints,
+            initialization_fn=klcontrol_stochastic_maze_agent_initialization,
+            record=i == config.n_episodes && config.record_episode,
+            debug_mode=debug_mode,
+            use_tikz=use_tikz
+        )
 
-            if local_config.visualize && parallel && i != config.n_episodes
-                # Turn off visualization for all but last episode in parallel mode
-                local_config = StochasticMazeConfig(
-                    time_horizon=config.time_horizon,
-                    n_episodes=config.n_episodes,
-                    n_iterations=config.n_iterations,
-                    wait_time=config.wait_time,
-                    number_type=config.number_type,
-                    visualize=false,
-                    seed=config.seed,
-                    record_episode=i == config.n_episodes && config.record_episode,
-                    experiment_name=config.experiment_name,
-                    parallel=parallel
-                )
-            end
-
-            reward, episode_data = run_stochastic_maze_single_episode(
-                klcontrol_stochastic_maze_agent,
-                tensors,
-                local_config,
-                goal_distribution,
-                callbacks,
-                episode_seed;
-                constraints_fn=klcontrol_stochastic_maze_agent_constraints,
-                initialization_fn=klcontrol_stochastic_maze_agent_initialization,
-                record=i == config.n_episodes && config.record_episode,
-                debug_mode=debug_mode
-            )
-
-            kl_rewards[i] = reward
-
-            # Thread-safe update of episodic data
-            lock(episodic_data_lock) do
-                push!(kl_episodic_data, episode_data)
-            end
-        end
-    else
-        # Sequential execution
-        log_info("Running sequentially")
-        episode_seeds = rand(StableRNG(seed), UInt32, config.n_episodes)
-
-        @showprogress desc = "Running KL-Control episodes: " for i in 1:config.n_episodes
-            episode_seed = episode_seeds[i]
-
-            reward, episode_data = run_stochastic_maze_single_episode(
-                klcontrol_stochastic_maze_agent,
-                tensors,
-                config,
-                goal_distribution,
-                callbacks,
-                episode_seed;
-                constraints_fn=klcontrol_stochastic_maze_agent_constraints,
-                initialization_fn=klcontrol_stochastic_maze_agent_initialization,
-                record=i == config.n_episodes && config.record_episode,
-                debug_mode=debug_mode
-            )
-
-            kl_rewards[i] = reward
-            push!(kl_episodic_data, episode_data)
-        end
+        kl_rewards[i] = reward
+        push!(kl_episodic_data, episode_data)
     end
-
     # Calculate KL-Control statistics
     kl_mean = mean(kl_rewards)
     kl_std = std(kl_rewards)
@@ -185,88 +239,34 @@ function run_stochastic_maze_experiment(;
     efe_rewards = zeros(config.n_episodes)
 
     # Run EFE episodes
-    if parallel
-        thread_count = Threads.nthreads()
-        log_info("Running with parallelization using $thread_count threads")
-        episode_seeds = rand(StableRNG(seed), UInt32, config.n_episodes)
+    episode_seeds = rand(StableRNG(seed), UInt32, config.n_episodes)
 
-        episodic_data_lock = ReentrantLock()
+    @showprogress desc = "Running EFE episodes: " for i in 1:config.n_episodes
+        episode_seed = episode_seeds[i]
 
-        Threads.@threads for i in 1:config.n_episodes
-            episode_seed = episode_seeds[i]
-            local_config = config
+        reward, episode_data = run_stochastic_maze_single_episode(
+            efe_stochastic_maze_agent,
+            tensors,
+            config,
+            goal_distribution,
+            callbacks,
+            episode_seed;
+            constraints_fn=efe_stochastic_maze_agent_constraints,
+            initialization_fn=efe_stochastic_maze_agent_initialization,
+            record=i == config.n_episodes && config.record_episode,
+            options=(force_marginal_computation=true,),
+            debug_mode=debug_mode,
+            use_tikz=use_tikz
+        )
 
-            if local_config.visualize && parallel && i != config.n_episodes
-                # Turn off visualization for all but last episode in parallel mode
-                local_config = StochasticMazeConfig(
-                    time_horizon=config.time_horizon,
-                    n_episodes=config.n_episodes,
-                    n_iterations=config.n_iterations,
-                    wait_time=config.wait_time,
-                    number_type=config.number_type,
-                    visualize=false,
-                    seed=config.seed,
-                    record_episode=i == config.n_episodes && config.record_episode,
-                    experiment_name=config.experiment_name,
-                    parallel=parallel
-                )
-            end
-
-            reward, episode_data = run_stochastic_maze_single_episode(
-                efe_stochastic_maze_agent,
-                tensors,
-                local_config,
-                goal_distribution,
-                callbacks,
-                episode_seed;
-                constraints_fn=efe_stochastic_maze_agent_constraints,
-                initialization_fn=efe_stochastic_maze_agent_initialization,
-                record=i == config.n_episodes && config.record_episode,
-                options=(force_marginal_computation=true,
-                    limit_stack_depth=500), # Force marginal computation
-                debug_mode=debug_mode
-            )
-
-            efe_rewards[i] = reward
-
-            # Thread-safe update of episodic data
-            lock(episodic_data_lock) do
-                push!(efe_episodic_data, episode_data)
-            end
-        end
-    else
-        # Sequential execution
-        log_info("Running sequentially")
-        episode_seeds = rand(StableRNG(seed), UInt32, config.n_episodes)
-
-        @showprogress desc = "Running EFE episodes: " for i in 1:config.n_episodes
-            episode_seed = episode_seeds[i]
-
-            reward, episode_data = run_stochastic_maze_single_episode(
-                efe_stochastic_maze_agent,
-                tensors,
-                config,
-                goal_distribution,
-                callbacks,
-                episode_seed;
-                constraints_fn=efe_stochastic_maze_agent_constraints,
-                initialization_fn=efe_stochastic_maze_agent_initialization,
-                record=i == config.n_episodes && config.record_episode,
-                options=(force_marginal_computation=true,),
-                debug_mode=debug_mode
-            )
-
-            efe_rewards[i] = reward
-            push!(efe_episodic_data, episode_data)
-        end
+        efe_rewards[i] = reward
+        push!(efe_episodic_data, episode_data)
     end
 
     # Calculate EFE statistics
     efe_mean = mean(efe_rewards)
     efe_std = std(efe_rewards)
     log_info("EFE agent results: mean reward = $efe_mean, std = $efe_std")
-
-
 
     # Record results
     experiment_metrics["models"]["efe"] = Dict(
@@ -297,23 +297,30 @@ function run_stochastic_maze_experiment(;
         log_info("Episode data saved to $episodic_results_file")
     end
 
-
     return experiment_metrics
+end
+
+function main()
+    # Parse command line arguments
+    args = parse_command_line()
+
+    # Run experiment with parsed arguments
+    run_stochastic_maze_experiment(
+        T=args.time_horizon,
+        n_episodes=args.n_episodes,
+        n_iterations=args.n_iterations,
+        wait_time=args.wait_time,
+        record_episode=args.record_episode,
+        seed=args.seed,
+        number_type=args.number_type,
+        experiment_name=args.experiment_name,
+        save_results=args.save_results,
+        debug_mode=args.debug_mode,
+        use_tikz=args.use_tikz
+    )
 end
 
 # Run the experiment with default parameters if script is run directly
 if abspath(PROGRAM_FILE) == @__FILE__
-    run_stochastic_maze_experiment(
-        T=11,
-        n_episodes=100,
-        n_iterations=10,
-        visualize=false,
-        wait_time=0.0,
-        record_episode=true,
-        seed=123,
-        number_type=Float64,
-        experiment_name="stochastic_maze_$(Dates.format(now(), "yyyymmdd_HHMMSS"))",
-        parallel=false,
-        debug_mode=true
-    )
+    main()
 end

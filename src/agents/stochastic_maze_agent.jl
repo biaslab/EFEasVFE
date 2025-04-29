@@ -6,10 +6,13 @@ using Distributions
 using StableRNGs
 using Plots
 using FileIO
+using VideoIO
+using Colors  # Add Colors.jl for RGB conversion
 import RxInfer: Categorical
 
 export StochasticMazeConfig, run_stochastic_maze_agent, run_stochastic_maze_single_episode
 export stochastic_maze_convert_action, action_to_string
+export convert_frames_to_video, create_video_from_experiment
 
 """
     StochasticMazeConfig
@@ -22,7 +25,6 @@ Configuration for StochasticMaze agent experiments.
 - `n_iterations::Int`: Number of inference iterations per step
 - `wait_time::Float64`: Time to wait between steps (for visualization)
 - `number_type::Type{T}`: Numeric type for computations
-- `visualize::Bool`: Whether to visualize the environment
 - `seed::Int`: Random seed
 - `record_episode::Bool`: Whether to record episode frames as individual PNG files
 - `experiment_name::String`: Name of the experiment (for saving results)
@@ -34,7 +36,6 @@ Base.@kwdef struct StochasticMazeConfig{T<:AbstractFloat}
     n_iterations::Int
     wait_time::Float64
     number_type::Type{T}
-    visualize::Bool
     seed::Int
     record_episode::Bool = false
     experiment_name::String
@@ -242,11 +243,6 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
         save_frame(initial_plot, model_name, seed, 0, frames_dir)
     end
 
-    # Visualization
-    if config.visualize
-        visualize_stochastic_maze(env)
-    end
-
     # Log initial state if in debug mode
     if debug_mode
         @debug "Episode $(seed): Starting at state $(env.agent_state)"
@@ -290,11 +286,6 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
             save_frame(current_plot, model_name, seed, current_timestep, frames_dir)
         end
 
-        # Visualization update
-        if config.visualize
-            visualize_stochastic_maze(env)
-        end
-
         # Log step information if in debug mode
         if debug_mode
             action_str = action_to_string(next_action_idx)
@@ -313,12 +304,70 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
         sleep(config.wait_time)
     end
 
+    if record
+        # Compile the saved frames into a video
+        video_path = datadir("results", "stochastic_maze", config.experiment_name, model_name, "episode_$(seed).mp4")
+        convert_frames_to_video(frames_dir, video_path)
+    end
+
     # Add final trajectory information
     episode_data["total_reward"] = total_reward
     episode_data["final_state"] = env.agent_state
     episode_data["seed"] = seed
 
     return total_reward, episode_data
+end
+
+"""
+    convert_frames_to_video(frames_dir::String, video_path::String; framerate::Int=5)
+
+Convert a directory of PNG frame images to a video file using the existing record_episode_to_video function.
+
+# Arguments
+- `frames_dir::String`: Directory containing the PNG frames
+- `video_path::String`: Path where the video file should be saved
+- `framerate::Int=5`: Frame rate for the video (default: 5 fps)
+
+# Returns
+- Nothing
+"""
+function convert_frames_to_video(frames_dir::String, video_path::String; framerate::Int=5)
+    # Find all PNG files in the directory
+    frame_files = filter(file -> endswith(file, ".png"), readdir(frames_dir, sort=true))
+
+    if isempty(frame_files)
+        @warn "No frames found in $frames_dir"
+        return
+    end
+
+    # Sort frames by their filenames to ensure correct order
+    sort!(frame_files, by=file -> match(r"frame_(\d+)\.png$", file).captures[1])
+
+    # Load all frames and convert them to the format expected by record_episode_to_video
+    frames = Vector{Array{UInt8,3}}()
+
+    for file in frame_files
+        # Load the image
+        img = FileIO.load(joinpath(frames_dir, file))
+
+        # Convert RGB image to UInt8 array with dimensions (height, width, 3)
+        height, width = size(img)
+        frame = Array{UInt8}(undef, height, width, 3)
+
+        for i in 1:height, j in 1:width
+            pixel = img[i, j]
+            frame[i, j, 1] = round(UInt8, 255 * Float64(pixel.r))
+            frame[i, j, 2] = round(UInt8, 255 * Float64(pixel.g))
+            frame[i, j, 3] = round(UInt8, 255 * Float64(pixel.b))
+        end
+
+        push!(frames, frame)
+    end
+
+    # Use the existing record_episode_to_video function to create the video
+    record_episode_to_video(frames, video_path)
+
+    @info "Converted $(length(frames)) frames to video at $video_path"
 end
 
 """
@@ -371,28 +420,8 @@ function run_stochastic_maze_agent(
             # Record only the last episode or specific episodes if record_episode is true
             should_record = config.record_episode && (i == config.n_episodes || config.record_episode == :all)
 
-            # Turn off visualization for parallel execution except for specific episodes
-            local_config = config
-            if should_record && config.visualize
-                # Keep visualization for frame saving
-            elseif use_parallel && config.visualize
-                # Create a copy with visualization turned off
-                local_config = StochasticMazeConfig(
-                    time_horizon=config.time_horizon,
-                    n_episodes=config.n_episodes,
-                    n_iterations=config.n_iterations,
-                    wait_time=config.wait_time,
-                    number_type=config.number_type,
-                    visualize=false,  # Turn off visualization for parallel execution
-                    seed=config.seed,
-                    record_episode=config.record_episode,
-                    experiment_name=config.experiment_name,
-                    parallel=use_parallel
-                )
-            end
-
             rewards[i], _ = run_stochastic_maze_single_episode(
-                model, tensors, local_config, goal, callbacks, episode_seed;
+                model, tensors, config, goal, callbacks, episode_seed;
                 constraints_fn=constraints_fn,
                 initialization_fn=initialization_fn,
                 record=should_record,

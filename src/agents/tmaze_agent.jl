@@ -23,7 +23,6 @@ Configuration for TMaze agent experiments.
 - `n_iterations::Int`: Number of inference iterations per step
 - `wait_time::Float64`: Time to wait between steps (for visualization)
 - `number_type::Type{T}`: Numeric type for computations
-- `visualize::Bool`: Whether to visualize the environment
 - `seed::Int`: Random seed
 - `record_episode::Bool`: Whether to record episode frames as individual PNG files
 - `experiment_name::String`: Name of the experiment (for saving results)
@@ -35,7 +34,6 @@ Base.@kwdef struct TMazeConfig{T<:AbstractFloat}
     n_iterations::Int
     wait_time::Float64
     number_type::Type{T}
-    visualize::Bool
     seed::Int
     record_episode::Bool = false
     experiment_name::String
@@ -317,11 +315,6 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
         save_frame(initial_plot, model_name, seed, 0, frames_dir)
     end
 
-    # Visualization
-    if config.visualize
-        visualize_tmaze(env)
-    end
-
     # Log initial state if in debug mode
     if debug_mode
         @info "Episode $(seed): Starting at $(env.agent_position), reward at :$(reward_position)"
@@ -368,11 +361,6 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
             save_frame(current_plot, model_name, seed, current_timestep, frames_dir)
         end
 
-        # Visualization update
-        if config.visualize
-            visualize_tmaze(env)
-        end
-
         # Log step information if in debug mode
         if debug_mode
             action_str = action_to_string(next_action_idx)
@@ -390,6 +378,12 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
 
         # Delay for visualization
         sleep(config.wait_time)
+    end
+
+    # Compile the frames into a video if recording
+    if record
+        video_path = datadir("results", "tmaze", config.experiment_name, model_name, "episode_$(seed).mp4")
+        convert_frames_to_video(frames_dir, video_path)
     end
 
     # Add final trajectory information
@@ -470,7 +464,6 @@ function run_tmaze_agent(
                     n_iterations=config.n_iterations,
                     wait_time=config.wait_time,
                     number_type=config.number_type,
-                    visualize=false,  # Turn off visualization for parallel execution
                     seed=config.seed,
                     record_episode=config.record_episode,
                     experiment_name=config.experiment_name,

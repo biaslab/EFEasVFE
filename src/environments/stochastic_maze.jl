@@ -1,11 +1,21 @@
-using RxEnvironments
-using GLMakie
 using Distributions # For Categorical
-import Distributions: Categorical
+using Plots
 
 export StochasticMaze, StochasticMazeAgent, StochasticMazeAction
-export move!, sample_observation, send_observation_and_reward
-export add_agent!, plot_maze_state, reset_agent!, reset!
+export step!, reset_maze!, create_stochastic_maze
+export generate_maze_tensors, generate_goal_distributions
+
+"""
+    StochasticMazeAction
+
+Represents an action in the stochastic maze.
+
+# Fields
+- `index::Int`: Action index (1=North, 2=East, 3=South, 4=West)
+"""
+struct StochasticMazeAction
+    index::Int
+end
 
 """
     StochasticMazeAgent
@@ -25,290 +35,268 @@ end
 Represents a stochastic maze environment where transitions are governed by probabilities.
 
 # Fields
-- `transition_tensor::Array{Float64,3}`: Transition probabilities (out × in × action)
+- `transition_tensor::Array{Float64,3}`: Transition probabilities (next_state × current_state × action)
 - `observation_matrix::Matrix{Float64}`: Observation probabilities for each state
 - `reward_states::Vector{Tuple{Int,Float64}}`: States and their reward values
-- `agents::Vector{StochasticMazeAgent}`: List of agents in the maze
+- `agent_state::Int`: Current state of the agent
+- `grid_size_x::Int`: Grid width
+- `grid_size_y::Int`: Grid height
+- `sink_states::Vector{Tuple{Int,Int}}`: States where agent can't move (x,y coordinates)
+- `stochastic_states::Vector{Tuple{Int,Int}}`: States with randomized movement (x,y coordinates)
 """
-struct StochasticMaze
+mutable struct StochasticMaze
     transition_tensor::Array{Float64,3}
     observation_matrix::Matrix{Float64}
     reward_states::Vector{Tuple{Int,Float64}}
-    agents::Vector{StochasticMazeAgent}
-end
+    agent_state::Int
+    grid_size_x::Int
+    grid_size_y::Int
+    sink_states::Vector{Tuple{Int,Int}}
+    stochastic_states::Vector{Tuple{Int,Int}}
 
-"""
-    StochasticMaze(transition_tensor, observation_matrix, reward_states)
-
-Construct a StochasticMaze with specified transition probabilities, observation matrix and reward states.
-"""
-function StochasticMaze(transition_tensor::Array{Float64,3}, observation_matrix::Matrix{Float64}, reward_states::Vector{Tuple{Int,Float64}})
-    # Validate transition tensor - each slice should be a valid probability distribution
-    for a in 1:size(transition_tensor, 3)
-        for s in 1:size(transition_tensor, 2)  # Changed from 1 to 2 for input state dimension
-            probs = transition_tensor[:, s, a]  # Changed from [s, :, a] to [:, s, a]
-            if !isapprox(sum(probs), 1.0, atol=1e-10) || any(x -> x < 0, probs)
-                throw(ArgumentError("Invalid transition probabilities for state $s, action $a"))
+    function StochasticMaze(
+        transition_tensor::Array{Float64,3},
+        observation_matrix::Matrix{Float64},
+        reward_states::Vector{Tuple{Int,Float64}},
+        agent_state::Int,
+        grid_size_x::Int,
+        grid_size_y::Int,
+        sink_states::Vector{Tuple{Int,Int}}=Vector{Tuple{Int,Int}}(),
+        stochastic_states::Vector{Tuple{Int,Int}}=Vector{Tuple{Int,Int}}()
+    )
+        # Validate transition tensor - each slice should be a valid probability distribution
+        for a in 1:size(transition_tensor, 3)
+            for s in 1:size(transition_tensor, 2)
+                probs = transition_tensor[:, s, a]
+                if !isapprox(sum(probs), 1.0, atol=1e-10) || any(x -> x < 0, probs)
+                    throw(ArgumentError("Invalid transition probabilities for state $s, action $a"))
+                end
             end
         end
-    end
 
-    # Validate observation matrix - each column should be a valid probability distribution
-    for s in 1:size(observation_matrix, 2)
-        probs = observation_matrix[:, s]
-        if !isapprox(sum(probs), 1.0, atol=1e-10) || any(x -> x < 0, probs)
-            throw(ArgumentError("Invalid observation probabilities for state $s"))
+        # Validate observation matrix - each column should be a valid probability distribution
+        for s in 1:size(observation_matrix, 2)
+            probs = observation_matrix[:, s]
+            if !isapprox(sum(probs), 1.0, atol=1e-10) || any(x -> x < 0, probs)
+                throw(ArgumentError("Invalid observation probabilities for state $s"))
+            end
         end
+
+        # Validate that agent_state is within bounds
+        if agent_state < 1 || agent_state > size(transition_tensor, 2)
+            throw(ArgumentError("Initial agent state must be between 1 and $(size(transition_tensor, 2))"))
+        end
+
+        new(transition_tensor, observation_matrix, reward_states, agent_state,
+            grid_size_x, grid_size_y, sink_states, stochastic_states)
     end
-
-    StochasticMaze(transition_tensor, observation_matrix, reward_states, StochasticMazeAgent[])
 end
 
 """
-    StochasticMazeAction
+    create_stochastic_maze(grid_size_x::Int, grid_size_y::Int, n_actions::Int; 
+                          sink_states=[(4, 2), (4, 4)],
+                          stochastic_states=[(2, 3), (3, 3), (4, 3)],
+                          noisy_observations=[(1, 5, 0.1), (2, 5, 0.1), ...],
+                          start_state=1)
 
-Represents an action in the stochastic maze.
+Create a stochastic maze environment with specified parameters.
 
-# Fields
-- `index::Int`: Action index
+# Arguments
+- `grid_size_x::Int`: Width of the grid
+- `grid_size_y::Int`: Height of the grid
+- `n_actions::Int`: Number of actions (typically 4 for NESW)
+- `sink_states::Vector{Tuple{Int,Int}}`: States where agent can't move
+- `stochastic_states::Vector{Tuple{Int,Int}}`: States with randomized movement
+- `noisy_observations::Vector{Tuple{Int,Int,Float64}}`: States with observation noise (x, y, noise_level)
+- `start_state::Int`: Initial state of the agent
+
+# Returns
+- `StochasticMaze`: The created environment
 """
-struct StochasticMazeAction
-    index::Int
+function create_stochastic_maze(
+    grid_size_x::Int,
+    grid_size_y::Int,
+    n_actions::Int=4;
+    sink_states::Vector{Tuple{Int,Int}}=[(4, 2), (4, 4)],
+    stochastic_states::Vector{Tuple{Int,Int}}=[(2, 3), (3, 3), (4, 3)],
+    noisy_observations::Vector{Tuple{Int,Int,Float64}}=[(1, 5, 0.1), (2, 5, 0.1), (3, 5, 0.4),
+        (4, 5, 0.1), (2, 3, 0.4), (2, 4, 0.4),
+        (3, 2, 0.4), (3, 3, 0.4), (4, 3, 0.2),
+        (2, 2, 0.3), (3, 2, 0.4), (3, 4, 0.4)],
+    start_state::Int=1
+)
+    # Generate the environment tensors
+    observation_matrix, transition_tensor, reward_states = generate_maze_tensors(
+        grid_size_x, grid_size_y, n_actions,
+        sink_states=sink_states,
+        stochastic_states=stochastic_states,
+        noisy_observations=noisy_observations
+    )
+
+    # Create the environment
+    env = StochasticMaze(
+        transition_tensor,
+        observation_matrix,
+        reward_states,
+        start_state,
+        grid_size_x,
+        grid_size_y,
+        sink_states,
+        stochastic_states
+    )
+
+    return env
 end
 
 """
-Move agent to new state based on action by sampling from transition probabilities.
+    step!(env::StochasticMaze, action::StochasticMazeAction)
+
+Take a step in the environment with the given action.
+Returns a tuple of (observation, reward).
+
+# Arguments
+- `env::StochasticMaze`: The environment
+- `action::StochasticMazeAction`: The action to take
+
+# Returns
+- `Tuple{Int,Float64}`: The resulting observation and reward
 """
-function move!(env::StochasticMaze, agent::StochasticMazeAgent, action::StochasticMazeAction)
-    current_state = agent.state
+function step!(env::StochasticMaze, action::StochasticMazeAction)
+    # Get the current state
+    current_state = env.agent_state
+
+    # Sample the next state from the transition distribution
     probs = env.transition_tensor[:, current_state, action.index]
     next_state = rand(Categorical(probs))
-    agent.state = next_state
-    return next_state
-end
 
-# Environment update does nothing
-RxEnvironments.update!(::StochasticMaze, dt) = nothing
+    # Update the agent's state
+    env.agent_state = next_state
 
-# Receive action and move agent
-RxEnvironments.receive!(maze::StochasticMaze, agent::StochasticMazeAgent, action::StochasticMazeAction) = move!(maze, agent, action)
+    # Sample an observation from the observation matrix
+    probs = env.observation_matrix[:, next_state]
+    observation = rand(Categorical(probs))
 
-"""
-Sample an observation from the maze's observation matrix at given state.
-"""
-function sample_observation(env::StochasticMaze, agent::StochasticMazeAgent)
-    probs = env.observation_matrix[:, agent.state]
-    return rand(Categorical(probs))
-end
-
-"""
-Get observation and rewards for current state.
-"""
-function RxEnvironments.what_to_send(agent::StochasticMazeAgent, maze::StochasticMaze, action::StochasticMazeAction)
-    # Find if current state has a reward
-    reward = nothing
-    for (state, value) in maze.reward_states
-        if agent.state == state
+    # Calculate reward
+    reward = 0.0
+    for (state, value) in env.reward_states
+        if next_state == state
             reward = value
             break
         end
     end
 
-    observation = sample_observation(maze, agent)
-    return (observation, reward)
-end
-
-"""
-Add agent to environment.
-"""
-function add_agent!(env::StochasticMaze, initial_state::Int)
-    if initial_state < 1 || initial_state > size(env.transition_tensor, 2)
-        error("Initial state must be between 1 and $(size(env.transition_tensor, 2))")
-    end
-    agent = StochasticMazeAgent(initial_state)
-    push!(env.agents, agent)
-    return agent
-end
-
-"""
-Reset agent to starting state.
-"""
-function reset_agent!(agent::StochasticMazeAgent, initial_state::Int)
-    agent.state = initial_state
-end
-
-"""
-Add agent to environment.
-"""
-function RxEnvironments.add_to_state!(env::StochasticMaze, agent::StochasticMazeAgent)
-    push!(env.agents, agent)
-end
-
-# Send observation and reward to the agent
-function send_observation_and_reward(env::StochasticMaze, agent::StochasticMazeAgent)
-    observation = sample_observation(env, agent)
-    reward = get_reward(env, agent)
     return observation, reward
 end
 
-# Get reward based on current state
-function get_reward(env::StochasticMaze, agent::StochasticMazeAgent)
-    return agent.state in env.reward_states ? 1.0 : 0.0
-end
+"""
+    reset_maze!(env::StochasticMaze, start_state::Int=1)
 
-# Helper function for self-loop visualization
-function draw_self_loop!(ax, pos, radius)
-    # Draw a circular arrow that loops back to the same position
-    θ = range(0, 3π / 2, length=50)  # Leave a gap for arrow head
-    center = (pos[1] - 0.1, pos[2] + 0.1)
-    circle = [(center[1] + radius * cos(t), center[2] + radius * sin(t)) for t in θ]
-    lines!(ax, first.(circle), last.(circle), color=(:black, 0.5))
+Reset the agent to the specified starting state.
 
-    # Add arrow head
-    arrow_pos = (center[1] + radius * cos(3π / 2), center[2] + radius * sin(3π / 2))
-    arrow_dir = (-radius * sin(3π / 2), radius * cos(3π / 2))
-    arrows!(ax, [arrow_pos[1]], [arrow_pos[2]],
-        [arrow_dir[1] * 0.2], [arrow_dir[2] * 0.2],
-        color=(:black, 0.5), arrowsize=10)
+# Arguments
+- `env::StochasticMaze`: The environment
+- `start_state::Int=1`: The state to reset to
+
+# Returns
+- `StochasticMaze`: The reset environment
+"""
+function reset_maze!(env::StochasticMaze, start_state::Int=1)
+    if start_state < 1 || start_state > size(env.transition_tensor, 2)
+        throw(ArgumentError("Start state must be between 1 and $(size(env.transition_tensor, 2))"))
+    end
+
+    env.agent_state = start_state
+    return env
 end
 
 """
-Reset agent to starting position.
+    sample_observation(env::StochasticMaze)
+
+Sample an observation from the current state.
+
+# Arguments
+- `env::StochasticMaze`: The environment
+
+# Returns
+- `Int`: The sampled observation
 """
-function reset!(env::RxEnvironments.RxEntity{StochasticMaze}, start_pos::Int=1)
-    reset_agent!(env.decorated.agents[1], start_pos)
+function sample_observation(env::StochasticMaze)
+    probs = env.observation_matrix[:, env.agent_state]
+    return rand(Categorical(probs))
 end
 
-function create_environment(::Type{StochasticMaze}, transition_tensor::Array{Float64,3}, observation_matrix::Matrix{Float64}, reward_states::Vector{Tuple{Int,Float64}})
-    env = StochasticMaze(transition_tensor, observation_matrix, reward_states)
-    rxe = create_entity(env; is_active=true)
-    return rxe
+"""
+    get_current_reward(env::StochasticMaze)
+
+Get the reward for the current state.
+
+# Arguments
+- `env::StochasticMaze`: The environment
+
+# Returns
+- `Float64`: The reward value
+"""
+function get_current_reward(env::StochasticMaze)
+    for (state, value) in env.reward_states
+        if env.agent_state == state
+            return value
+        end
+    end
+    return 0.0
 end
 
-function RxEnvironments.plot_state(ax, env::StochasticMaze)
-    # Get grid dimensions from environment
-    grid_size_x = Int(sqrt(size(env.transition_tensor, 1)))
-    grid_size_y = grid_size_x
+"""
+    state_to_xy(state::Int, grid_size_x::Int)
 
-    # Create grid lines
-    for x in 0:grid_size_x
-        vlines!(ax, x, 0, grid_size_y, color=:black, linewidth=0.5)
-    end
-    for y in 0:grid_size_y
-        hlines!(ax, y, 0, grid_size_x, color=:black, linewidth=0.5)
-    end
+Convert a linear state index to (x,y) coordinates.
 
-    # Plot sink states in red
-    # Find sink states by checking where all actions point to same state
-    sink_states = []
-    for s in 1:size(env.transition_tensor, 1)
-        if all(env.transition_tensor[s, s, :] .== 1.0)
-            x = ((s - 1) % grid_size_x) + 1
-            y = div(s - 1, grid_size_x) + 1
-            push!(sink_states, (x, y))
-        end
-    end
-    for (x, y) in sink_states
-        poly!(ax,
-            [Point2f(x - 1, grid_size_y - y), Point2f(x, grid_size_y - y),
-                Point2f(x, grid_size_y - y + 1), Point2f(x - 1, grid_size_y - y + 1)],
-            color=(:red, 0.3))
-    end
+# Arguments
+- `state::Int`: The state index
+- `grid_size_x::Int`: The width of the grid
 
-    # Plot reward states
-    for (state, reward) in env.reward_states
-        x = ((state - 1) % grid_size_x) + 1
-        y = div(state - 1, grid_size_x) + 1
-        color = reward > 0 ? :green : :red
-        opacity = abs(reward) # Use absolute value of reward for opacity
-        scatter!(ax, [x - 0.5], [grid_size_y - y + 0.5], color=(color, opacity), markersize=20)
-    end
-
-    # Plot observation noise
-    noisy_obs = []
-    for s in 1:size(env.observation_matrix, 1)
-        if env.observation_matrix[s, s] != 1.0
-            x = ((s - 1) % grid_size_x) + 1
-            y = div(s - 1, grid_size_x) + 1
-            noise = 1.0 - env.observation_matrix[s, s]
-            push!(noisy_obs, (x, y, noise))
-        end
-    end
-
-    for (x, y, noise) in noisy_obs
-        poly!(ax,
-            [Point2f(x - 1, grid_size_y - y), Point2f(x, grid_size_y - y),
-                Point2f(x, grid_size_y - y + 1), Point2f(x - 1, grid_size_y - y + 1)],
-            color=(:lightblue, noise))
-    end
-
-    # Plot stochastic states (bridge effect)
-    stochastic_states = []
-    for s in 1:size(env.transition_tensor, 1)
-        # Check if any action has non-1.0 probability for intended direction
-        if any(maximum(env.transition_tensor[:, s, a]) < 0.99 for a in 1:size(env.transition_tensor, 3))
-            x = ((s - 1) % grid_size_x) + 1
-            y = div(s - 1, grid_size_x) + 1
-            push!(stochastic_states, (x, y))
-        end
-    end
-
-    # Draw bridge planks in brown with gaps
-    for (x, y) in stochastic_states
-        # Draw 3 horizontal planks
-        for i in 0:2
-            poly!(ax,
-                [Point2f(x - 1, grid_size_y - y + 0.25 + i * 0.25),
-                    Point2f(x, grid_size_y - y + 0.25 + i * 0.25),
-                    Point2f(x, grid_size_y - y + 0.32 + i * 0.25),
-                    Point2f(x - 1, grid_size_y - y + 0.32 + i * 0.25)],
-                color=(:brown, 0.6))
-        end
-    end
-
-    for agent in env.agents
-        x = ((agent.state - 1) % grid_size_x) + 1
-        y = div(agent.state - 1, grid_size_x) + 1
-        scatter!(ax, [x - 0.5], [grid_size_y - y + 0.5], color=:blue, markersize=20)
-    end
-
-    # Set proper axis limits and remove ticks
-    limits!(ax, 0, grid_size_x, 0, grid_size_y)
-    hidedecorations!(ax)
+# Returns
+- `Tuple{Int,Int}`: The (x,y) coordinates
+"""
+function state_to_xy(state::Int, grid_size_x::Int)
+    y = div(state - 1, grid_size_x) + 1
+    x = mod(state - 1, grid_size_x) + 1
+    return (x, y)
 end
 
+"""
+    xy_to_state(x::Int, y::Int, grid_size_x::Int)
 
-function generate_goal_distributions(n_states::Int, goal_state::Int, T::Int)
-    # Initialize array to store T categorical distributions
-    distributions = Vector{Categorical}(undef, T)
+Convert (x,y) coordinates to a linear state index.
 
-    # Create base probability vector
-    base_prob = ones(n_states) / n_states
+# Arguments
+- `x::Int`: The x coordinate
+- `y::Int`: The y coordinate
+- `grid_size_x::Int`: The width of the grid
 
-    # Create goal probability vector 
-    goal_prob = zeros(n_states)
-    goal_prob[goal_state] = 1.0
-
-    # Generate distributions with increasing entropy
-    for t in T:-1:1
-        # Calculate mixing weight that increases exponentially over time
-        α = (exp(10 * t / T) - 1) / (exp(10) - 1)  # Exponential scaling from 0 to 1
-
-        # Mix base and goal probabilities
-        mixed_prob = α * goal_prob + (1 - α) * base_prob
-
-        # Create categorical distribution
-        distributions[t] = Categorical(mixed_prob ./ sum(mixed_prob))
-    end
-
-    return distributions
+# Returns
+- `Int`: The state index
+"""
+function xy_to_state(x::Int, y::Int, grid_size_x::Int)
+    return x + (y - 1) * grid_size_x
 end
 
+"""
+    generate_maze_tensors(grid_size_x::Int, grid_size_y::Int, n_actions::Int;
+                         sink_states::Vector{Tuple{Int,Int}}=[(4, 2), (4, 4)],
+                         stochastic_states::Vector{Tuple{Int,Int}}=[(2, 3), (3, 3), (4, 3)],
+                         noisy_observations::Vector{Tuple{Int,Int,Float64}}=[(1, 5, 0.1), ...])
 
+Generate the observation matrix, transition tensor, and reward states for a stochastic maze.
+
+# Returns
+- `Tuple{Matrix{Float64}, Array{Float64,3}, Vector{Tuple{Int,Float64}}}`: 
+  The observation matrix, transition tensor, and reward states
+"""
 function generate_maze_tensors(grid_size_x::Int, grid_size_y::Int, n_actions::Int;
     sink_states::Vector{Tuple{Int,Int}}=[(4, 2), (4, 4)],
     stochastic_states::Vector{Tuple{Int,Int}}=[(2, 3), (3, 3), (4, 3)],
     noisy_observations::Vector{Tuple{Int,Int,Float64}}=[(1, 5, 0.1), (2, 5, 0.1), (3, 5, 0.4), (4, 5, 0.1), (2, 3, 0.4), (2, 4, 0.4), (3, 2, 0.4), (3, 3, 0.4), (4, 3, 0.2), (2, 2, 0.3), (3, 2, 0.4), (3, 4, 0.4),])
+
     # Create grid transition tensor 
     n_states = grid_size_x * grid_size_y
 
@@ -339,7 +327,7 @@ function generate_maze_tensors(grid_size_x::Int, grid_size_y::Int, n_actions::In
                     if y < grid_size_y  # Can move down
                         B[coord_to_state(x, y + 1), s, a] = 0.4
                     end
-                    B[coord_to_state(x + 1, y), s, a] = 0.2
+                    B[coord_to_state(min(x + 1, grid_size_x), y), s, a] = 0.2
                 end
                 # Remaining 20% follows normal movement rules
                 prob = 0.2
@@ -380,64 +368,59 @@ function generate_maze_tensors(grid_size_x::Int, grid_size_y::Int, n_actions::In
 
     # Normalize tensor to ensure proper probability distributions
     for s in 1:n_states, a in 1:n_actions
-        B ./= sum(B, dims=1)
+        total = sum(B[:, s, a])
+        if total > 0
+            B[:, s, a] ./= total
+        end
     end
 
     # Initialize observation matrix A
     A = zeros(n_states, n_states)
     state_to_coord(s) = (mod(s - 1, grid_size_x) + 1, div(s - 1, grid_size_x) + 1)
 
-    # Fill observation matrix
+    # Fill observation matrix with default perfect observations
     for s in 1:n_states
-        # Get x,y coordinates of current state
-        x, y = state_to_coord(s)
+        A[s, s] = 1.0
+    end
 
-        # Default to perfect observations
-        correct_prob = 1.0
-
-        # Check if current state is a noisy observation point
-        if (x, y) in [(nx, ny) for (nx, ny, _) in noisy_observations]
-            # Find the noise level for this state
-            _, _, noise_level = first(filter(p -> p[1] == x && p[2] == y, noisy_observations))
-            correct_prob = 1.0 - noise_level
-        end
-
-        # Add probability of correct observation
-        A[s, s] = correct_prob
+    # Add observation noise to specified states
+    for (x, y, noise_level) in noisy_observations
+        s = coord_to_state(x, y)
+        # Reduce the perfect observation probability
+        A[s, s] = 1.0 - noise_level
 
         # Distribute remaining probability to adjacent states
-        remaining_prob = 1.0 - correct_prob
         adjacent_states = Int[]
 
         # Check all adjacent states including diagonals
         if y > 1
-            push!(adjacent_states, coord_to_state(x, y - 1))  # Up
+            push!(adjacent_states, coord_to_state(x, y - 1))  # South
             if x > 1
-                push!(adjacent_states, coord_to_state(x - 1, y - 1)) # Up-Left
+                push!(adjacent_states, coord_to_state(x - 1, y - 1)) # Southwest
             end
             if x < grid_size_x
-                push!(adjacent_states, coord_to_state(x + 1, y - 1)) # Up-Right
+                push!(adjacent_states, coord_to_state(x + 1, y - 1)) # Southeast
             end
         end
         if y < grid_size_y
-            push!(adjacent_states, coord_to_state(x, y + 1))  # Down
+            push!(adjacent_states, coord_to_state(x, y + 1))  # North
             if x > 1
-                push!(adjacent_states, coord_to_state(x - 1, y + 1)) # Down-Left
+                push!(adjacent_states, coord_to_state(x - 1, y + 1)) # Northwest
             end
             if x < grid_size_x
-                push!(adjacent_states, coord_to_state(x + 1, y + 1)) # Down-Right
+                push!(adjacent_states, coord_to_state(x + 1, y + 1)) # Northeast
             end
         end
         if x > 1
-            push!(adjacent_states, coord_to_state(x - 1, y))  # Left
+            push!(adjacent_states, coord_to_state(x - 1, y))  # West
         end
         if x < grid_size_x
-            push!(adjacent_states, coord_to_state(x + 1, y))  # Right
+            push!(adjacent_states, coord_to_state(x + 1, y))  # East
         end
 
         # Distribute remaining probability equally among adjacent states
         if !isempty(adjacent_states)
-            prob_per_adjacent = remaining_prob / length(adjacent_states)
+            prob_per_adjacent = noise_level / length(adjacent_states)
             for adj_s in adjacent_states
                 A[adj_s, s] = prob_per_adjacent
             end
@@ -446,10 +429,15 @@ function generate_maze_tensors(grid_size_x::Int, grid_size_y::Int, n_actions::In
 
     # Normalize matrix to ensure proper probability distributions
     for s in 1:n_states
-        A ./= sum(A, dims=1)
+        total = sum(A[:, s])
+        if total > 0
+            A[:, s] ./= total
+        end
     end
 
+    # Define reward states
     reward_states = [(9, -1.0), (19, -1.0), (15, 1.0)]
+
     # Add noisy states to reward states with small negative reward
     for s in 1:n_states
         if A[s, s] < 1.0  # If diagonal element is less than 1, it's a noisy state
@@ -460,3 +448,129 @@ function generate_maze_tensors(grid_size_x::Int, grid_size_y::Int, n_actions::In
     return A, B, reward_states
 end
 
+"""
+    generate_goal_distributions(n_states::Int, goal_state::Int, T::Int)
+
+Generate a sequence of categorical distributions that increasingly concentrate 
+probability on the goal state as T increases.
+
+# Arguments
+- `n_states::Int`: Total number of states
+- `goal_state::Int`: The goal state index
+- `T::Int`: Time horizon / number of distributions to generate
+
+# Returns
+- `Vector{Categorical}`: A vector of T categorical distributions
+"""
+function generate_goal_distributions(n_states::Int, goal_state::Int, T::Int)
+    # Initialize array to store T categorical distributions
+    distributions = Vector{Categorical}(undef, T)
+
+    # Create base probability vector
+    base_prob = ones(n_states) / n_states
+
+    # Create goal probability vector 
+    goal_prob = zeros(n_states)
+    goal_prob[goal_state] = 1.0
+
+    # Generate distributions with increasing entropy
+    for t in T:-1:1
+        # Calculate mixing weight that increases exponentially over time
+        α = (exp(10 * t / T) - 1) / (exp(10) - 1)  # Exponential scaling from 0 to 1
+
+        # Mix base and goal probabilities
+        mixed_prob = α * goal_prob + (1 - α) * base_prob
+
+        # Create categorical distribution
+        distributions[t] = Categorical(mixed_prob ./ sum(mixed_prob))
+    end
+
+    return distributions
+end
+
+"""
+    visualize_stochastic_maze(env::StochasticMaze)
+
+Visualize the StochasticMaze environment using Plots.jl.
+
+# Arguments
+- `env::StochasticMaze`: The environment to visualize
+
+# Returns
+- `Plots.Plot`: A plot of the maze
+"""
+function visualize_stochastic_maze(env::StochasticMaze)
+    # Get grid dimensions
+    grid_size_x = env.grid_size_x
+    grid_size_y = env.grid_size_y
+
+    # Create a new plot with appropriate size and aspect ratio
+    p = plot(
+        size=(600, 600),
+        aspect_ratio=:equal,
+        xlim=(0, grid_size_x),
+        ylim=(0, grid_size_y),
+        legend=false,
+        grid=false,
+        ticks=false,
+        border=:none
+    )
+
+    # Draw grid lines
+    for x in 0:grid_size_x
+        plot!(p, [x, x], [0, grid_size_y], color=:black, linewidth=0.5, alpha=0.7)
+    end
+    for y in 0:grid_size_y
+        plot!(p, [0, grid_size_x], [y, y], color=:black, linewidth=0.5, alpha=0.7)
+    end
+
+    # Plot sink states in red
+    for (x, y) in env.sink_states
+        # Plot a filled rectangle for sink states
+        x_coords = [x - 1, x, x, x - 1, x - 1]
+        y_coords = [grid_size_y - y, grid_size_y - y, grid_size_y - y + 1, grid_size_y - y + 1, grid_size_y - y]
+        plot!(p, x_coords, y_coords, color=:red, alpha=0.3, fill=true)
+    end
+
+    # Plot reward states
+    for (state, reward) in env.reward_states
+        x, y = state_to_xy(state, grid_size_x)
+        color = reward > 0 ? :green : :red
+        opacity = min(abs(reward), 1.0) # Use absolute value of reward for opacity, capped at 1.0
+        scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity, markersize=20)
+    end
+
+    # Plot observation noise
+    for s in 1:size(env.observation_matrix, 2)
+        if env.observation_matrix[s, s] != 1.0
+            x, y = state_to_xy(s, grid_size_x)
+            noise = 1.0 - env.observation_matrix[s, s]
+            # Plot a filled rectangle for noisy states
+            x_coords = [x - 1, x, x, x - 1, x - 1]
+            y_coords = [grid_size_y - y, grid_size_y - y, grid_size_y - y + 1, grid_size_y - y + 1, grid_size_y - y]
+            plot!(p, x_coords, y_coords, color=:lightblue, alpha=noise, fill=true)
+        end
+    end
+
+    # Plot stochastic states (bridge effect)
+    for (x, y) in env.stochastic_states
+        # Draw 3 horizontal planks
+        for i in 0:2
+            x_coords = [x - 1, x, x, x - 1, x - 1]
+            y_coords = [
+                grid_size_y - y + 0.25 + i * 0.25,
+                grid_size_y - y + 0.25 + i * 0.25,
+                grid_size_y - y + 0.32 + i * 0.25,
+                grid_size_y - y + 0.32 + i * 0.25,
+                grid_size_y - y + 0.25 + i * 0.25
+            ]
+            plot!(p, x_coords, y_coords, color=:brown, alpha=0.6, fill=true)
+        end
+    end
+
+    # Plot agent
+    x, y = state_to_xy(env.agent_state, grid_size_x)
+    scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=:blue, markersize=20)
+
+    return p
+end

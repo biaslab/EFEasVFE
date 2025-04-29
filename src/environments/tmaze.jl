@@ -1,10 +1,10 @@
-using RxEnvironments
-using GLMakie
 using Distributions # For Categorical
+using Plots # For visualization
 
 export North, East, South, West, MazeAction, TMaze
 export create_tmaze, reset_tmaze!, step!
 export create_reward_observation_tensor, create_location_transition_tensor, create_reward_to_location_mapping
+export plot_tmaze
 
 """
     MazeAgent
@@ -166,12 +166,6 @@ function next_state(agent_pos::Tuple{Int,Int}, b_bounds, ::Stay)
     return agent_pos
 end
 
-# Environment update does nothing
-RxEnvironments.update!(::Maze, dt) = nothing
-
-# Receive action and move agent
-RxEnvironments.receive!(maze::Maze, agent::MazeAgent, action::Union{MazeAgentAction,Int}) = move!(agent, maze, action)
-
 """
 Convert linear index to (x,y) coordinates.
 """
@@ -245,21 +239,6 @@ function create_transition_tensor(maze::Maze)
 end
 
 """
-Get observation and rewards for current state.
-"""
-function RxEnvironments.what_to_send(agent::MazeAgent, maze::Maze, action::MazeAgentAction)
-    rewards = nothing
-    for reward_loc in maze.reward_pos
-        if agent.pos == reward_loc[1]
-            rewards = reward_loc[2]
-            break
-        end
-    end
-    observation = sample_observation(maze, agent.pos)
-    return (observation, rewards)
-end
-
-"""
 Plot cell walls based on boundary encoding.
 """
 function plot_cell!(ax, cell, pos, internal=false)
@@ -278,50 +257,6 @@ function plot_cell!(ax, cell, pos, internal=false)
             lines!(ax, [x1, x2], [y1, y2], color="black", linestyle=:dash)
         end
     end
-end
-
-"""
-Add agent to environment.
-"""
-function RxEnvironments.add_to_state!(env::Maze, agent::MazeAgent)
-    push!(env.agents, agent)
-end
-
-"""
-Plot the maze and agents.
-"""
-function RxEnvironments.plot_state(ax, env::Maze)
-    ys, xs = size(env.structure)
-    xlims!(ax, -0.5, xs + 0.5)
-    ylims!(ax, -0.5, ys + 0.5)
-
-    # Plot maze cells
-    for x in 1:xs, y in 1:ys
-        plot_cell!(ax, env.structure[y, x], (x - 0.5, (y - 0.5)), false)
-    end
-
-    # Plot agents
-    for agent in env.agents
-        scatter!(ax, [agent.pos[1] - 0.5], [agent.pos[2] - 0.5], color="red")
-    end
-end
-
-"""
-Create environment and agent entities.
-"""
-function create_environment(::Type{Maze}, structure::Matrix{UInt8}, reward_pos; start_pos::Tuple{Int,Int}=(1, 1))
-    maze = Maze(structure, reward_pos)
-    agent = MazeAgent(start_pos)
-    rx_env = create_entity(maze; is_active=true)
-    rx_agent = add!(rx_env, agent)
-    return rx_env, rx_agent
-end
-
-"""
-Reset agent to starting position.
-"""
-function reset!(env::RxEnvironments.RxEntity{Maze}, start_pos::Tuple{Int,Int}=(1, 1))
-    env.decorated.agents[1].pos = start_pos
 end
 
 """
@@ -571,11 +506,11 @@ function next_position(env::TMaze, pos::Tuple{Int,Int}, action::MazeAction)
         if action.direction isa North
             return (2, 3)  # Move to top middle
         elseif action.direction isa East
-            return (3, 3)  # Move to top right
+            return (2, 2)  # Stay in place 
         elseif action.direction isa South
             return (2, 1)  # Move to bottom
         elseif action.direction isa West
-            return (1, 3)  # Move to top left
+            return (2, 2)  # Stay in place
         end
 
         # Top left (1,3)
@@ -711,9 +646,9 @@ function create_location_transition_tensor()
 
     # Middle junction (state 2)
     transition_tensor[4, 2, 1] = 1.0  # North -> Top middle
-    transition_tensor[5, 2, 2] = 1.0  # East -> Top right
+    transition_tensor[2, 2, 2] = 1.0  # East -> Stay (wall)
     transition_tensor[1, 2, 3] = 1.0  # South -> Bottom
-    transition_tensor[3, 2, 4] = 1.0  # West -> Top left
+    transition_tensor[2, 2, 4] = 1.0  # West -> Stay (wall)
 
     # Top left (state 3)
     transition_tensor[3, 3, 1] = 1.0  # North -> Stay (wall)
@@ -758,4 +693,92 @@ function create_reward_to_location_mapping()
     reward_mapping[5, 2] = 1.0
 
     return reward_mapping
+end
+
+"""
+    plot_tmaze(env::TMaze)
+
+Create a visualization of the TMaze environment.
+Returns a Plots object showing the T-maze structure with corridors, walls,
+rewards, and agent position.
+"""
+function plot_tmaze(env::TMaze)
+    # Create a new plot with a clean appearance
+    p = Plots.plot(
+        aspect_ratio=:equal,
+        legend=false,
+        axis=false,
+        grid=false,
+        ticks=false,
+        background_color=:white,
+        size=(500, 400),
+        frame=:none,
+        margin=5Plots.mm
+    )
+
+    # Draw the maze background (light gray)
+    Plots.plot!(p, [0, 7], [0, 5], color=:white, linewidth=0, fill=true, fillcolor=:lightgray)
+
+    # Draw the T-maze corridor (white)
+
+    # Vertical corridor
+    Plots.plot!(p, [3, 4], [1, 4], color=:white, linewidth=0, fill=true, fillcolor=:white)
+
+    # Horizontal corridor at top
+    Plots.plot!(p, [1, 6], [3, 4], color=:white, linewidth=0, fill=true, fillcolor=:white)
+
+    # Draw the outer walls of the maze (black)
+    # Vertical corridor walls
+    Plots.plot!(p, [3, 3], [1, 3], color=:black, linewidth=2)  # Left vertical wall
+    Plots.plot!(p, [4, 4], [1, 3], color=:black, linewidth=2)  # Right vertical wall
+
+    # Horizontal corridor top walls
+    Plots.plot!(p, [1, 6], [4, 4], color=:black, linewidth=2)  # Top horizontal wall
+    Plots.plot!(p, [1, 3], [3, 3], color=:black, linewidth=2)  # Bottom left horizontal wall
+    Plots.plot!(p, [4, 6], [3, 3], color=:black, linewidth=2)  # Bottom right horizontal wall
+
+    # Bottom wall
+    Plots.plot!(p, [3, 4], [1, 1], color=:black, linewidth=2)
+
+    # Left and right top walls
+    Plots.plot!(p, [1, 1], [3, 4], color=:black, linewidth=2)  # Left wall
+    Plots.plot!(p, [6, 6], [3, 4], color=:black, linewidth=2)  # Right wall
+
+    # Draw reward locations with clear indicators
+    reward_position = env.reward_position
+
+    # The left reward location (left arm of the T)
+    left_color = reward_position == :left ? :green : :lightgray
+    Plots.scatter!(p, [2], [3.5], markersize=25, color=left_color, alpha=0.7)
+    Plots.annotate!(p, 2, 3.5, Plots.text("L", :black, 14,))
+
+    # The right reward location (right arm of the T)
+    right_color = reward_position == :right ? :green : :lightgray
+    Plots.scatter!(p, [5], [3.5], markersize=25, color=right_color, alpha=0.7)
+    Plots.annotate!(p, 5, 3.5, Plots.text("R", :black, 14,))
+
+    # Convert agent position to plot coordinates
+    x, y = 0, 0
+    agent_pos = env.agent_position
+
+    if agent_pos == (2, 1)      # Bottom
+        x, y = 3.5, 1.5
+    elseif agent_pos == (2, 2)  # Middle
+        x, y = 3.5, 2.5
+    elseif agent_pos == (1, 3)  # Top left
+        x, y = 2, 3.5
+    elseif agent_pos == (2, 3)  # Top middle
+        x, y = 3.5, 3.5
+    elseif agent_pos == (3, 3)  # Top right
+        x, y = 5, 3.5
+    end
+
+    # Draw agent as a red circle with a black border
+    Plots.scatter!(p, [x], [y], markersize=25, color=:red, markerstrokewidth=1, markerstrokecolor=:black)
+
+    # Add an informative caption showing the reward location
+    caption = "TMaze - Reward location: $(uppercase(string(reward_position)))"
+    Plots.title!(p, caption, titlefontsize=12)
+
+    return p
 end

@@ -87,7 +87,7 @@ end
 
 convert_action(next_action::AbstractVector) = convert_action(argmax(next_action))
 
-function initialize_beliefs(grid_size, T::Type{<:AbstractFloat})
+function initialize_beliefs_minigrid(grid_size, T::Type{<:AbstractFloat})
     return MinigridBeliefs(
         location=Categorical([i <= grid_size^2 - 2 * grid_size ? T(1 / (grid_size^2 - 2 * grid_size)) : tiny(T) for i in 1:grid_size^2]),
         orientation=Categorical(fill(T(1 / 4), 4)),
@@ -311,7 +311,7 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
         # Initialize frames collection if recording
         frames = record ? Vector{Array{UInt8,3}}() : nothing
 
-        beliefs = initialize_beliefs(config.grid_size, config.number_type)
+        beliefs = initialize_beliefs_minigrid(config.grid_size, config.number_type)
         reward = 0
         env_state = execute_initial_action(config.grid_size, session_id)
         action = 1

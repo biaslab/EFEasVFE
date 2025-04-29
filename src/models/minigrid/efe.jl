@@ -59,10 +59,10 @@ import RxInfer: Categorical
             push!(location_observation_marginalcomponents, location_observation_marginalcomponent)
             orientation_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 3)
             push!(orientation_observation_marginalcomponents, orientation_observation_marginalcomponent)
-            # key_location_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 4)
-            # push!(key_location_observation_marginalcomponents, key_location_observation_marginalcomponent)
-            # door_location_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 5)
-            # push!(door_location_observation_marginalcomponents, door_location_observation_marginalcomponent)
+            key_location_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 4)
+            push!(key_location_observation_marginalcomponents, key_location_observation_marginalcomponent)
+            door_location_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 5)
+            push!(door_location_observation_marginalcomponents, door_location_observation_marginalcomponent)
             key_door_state_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 6)
             push!(key_door_state_observation_marginalcomponents, key_door_state_observation_marginalcomponent)
             decomposed_tensor = observation_tensors[x, y]
@@ -71,8 +71,8 @@ import RxInfer: Categorical
         end
         location[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(location_observation_marginalcomponents)}
         orientation[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(orientation_observation_marginalcomponents)}
-        # key_location ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(key_location_observation_marginalcomponents)}
-        # door_location ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(door_location_observation_marginalcomponents)}
+        key_location ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(key_location_observation_marginalcomponents)}
+        door_location ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(door_location_observation_marginalcomponents)}
         key_door_state[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(key_door_state_observation_marginalcomponents)}
     end
     location[end] ~ goal

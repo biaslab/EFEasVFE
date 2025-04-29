@@ -1,5 +1,1 @@
-include("full_tensor/cached.jl")
 include("full_tensor/uncached.jl")
-# include("parafac/cached.jl")
-include("parafac/uncached.jl")
-include("parafac/marginals.jl")

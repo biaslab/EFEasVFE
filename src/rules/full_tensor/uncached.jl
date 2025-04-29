@@ -259,3 +259,11 @@ end
     set_marginal!(meta, marginal)
     return marginal
 end
+
+
+# Rules for transition model 
+@marginalrule DiscreteTransition(:out_in) (m_out::Categorical, m_in::Categorical, q_a::PointMass{<:AbstractArray{T,2}}, meta::JointMarginalStorage) where {T} = begin
+    marginal = @call_marginalrule DiscreteTransition(:out_in) (m_out=m_out, m_in=m_in, q_a=q_a, meta=nothing)
+    set_marginal!(meta, marginal)
+    return marginal
+end

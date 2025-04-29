@@ -36,11 +36,12 @@ function run_tmaze_experiment(;
     debug_mode::Bool=false
 )
     # Create directory for logs
+    results_dir = datadir("results", "tmaze", experiment_name)
     if save_results
-        mkpath(log_dir)
-        log_file = joinpath(log_dir, "$(experiment_name).log")
-        results_file = joinpath(log_dir, "$(experiment_name)_results.json")
-        episodic_results_file = joinpath(log_dir, "$(experiment_name)_episodes.json")
+        mkpath(results_dir)
+        log_file = joinpath(results_dir, "logs.log")
+        results_file = joinpath(results_dir, "results.json")
+        episodic_results_file = joinpath(results_dir, "episodes.json")
     end
 
     # Create goal distribution - prefer the left arm location (state 3)
@@ -240,56 +241,15 @@ function run_tmaze_experiment(;
         log_info("Episode data saved to $episodic_results_file")
     end
 
-    # Run a single visual episode with KL control
-    if !visualize && !record_episode
-        log_info("Running visualized episode...")
-        visual_config = TMazeConfig(
-            time_horizon=T,
-            n_episodes=1,
-            n_iterations=n_iterations,
-            wait_time=0.1, # Slower for visualization
-            number_type=number_type,
-            visualize=true,
-            seed=seed + 1, # Different seed
-            record_episode=true,
-            experiment_name=experiment_name,
-            parallel=false
-        )
-
-        vis_reward, vis_data = run_tmaze_single_episode(
-            klcontrol_tmaze_agent,
-            tensors,
-            visual_config,
-            left_goal_distribution,
-            nothing,
-            seed + 100;
-            constraints_fn=klcontrol_tmaze_agent_constraints,
-            initialization_fn=klcontrol_tmaze_agent_initialization,
-            record=true,
-            debug_mode=debug_mode
-        )
-
-        log_info("Visualization complete. Reward: $vis_reward")
-
-        if save_results
-            # Save visualization data
-            visualization_file = joinpath(log_dir, "$(experiment_name)_visualization.json")
-            open(visualization_file, "w") do io
-                JSON.print(io, vis_data, 2)
-            end
-            log_info("Visualization data saved to $visualization_file")
-        end
-    end
-
     return experiment_metrics
 end
 
 # Run the experiment with default parameters
 if abspath(PROGRAM_FILE) == @__FILE__
     run_tmaze_experiment(
-        T=5,
+        T=6,
         n_episodes=50,
-        n_iterations=10,
+        n_iterations=20,
         visualize=false,
         wait_time=0.0,
         record_episode=true,
@@ -297,6 +257,6 @@ if abspath(PROGRAM_FILE) == @__FILE__
         number_type=Float64,
         experiment_name="tmaze_$(Dates.format(now(), "yyyymmdd_HHMMSS"))",
         parallel=false,
-        debug_mode=true
+        debug_mode=false
     )
 end

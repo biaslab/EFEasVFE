@@ -1,6 +1,14 @@
 using LogExpFunctions
 using RxInfer
 
+function conditional_entropy(marginal::AbstractArray{T,2}, out_dim::Int, in_dim::Int) where {T}
+    q_in = sum(marginal, dims=out_dim)
+    q_given_in = marginal ./ q_in
+    joint_entropies = entropy.(eachslice(q_given_in, dims=in_dim))
+    return joint_entropies
+end
+
+
 function conditional_entropy(marginal::AbstractArray{T,N}, out_dim::Int, in_dim::Int) where {T,N}
     sum_dims = setdiff(1:N, in_dim)
     q_in = sum(marginal, dims=sum_dims)

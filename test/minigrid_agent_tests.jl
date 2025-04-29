@@ -55,11 +55,11 @@
     end
 
     @testset "Belief Initialization" begin
-        import EFEasVFE: initialize_beliefs
+        import EFEasVFE: initialize_beliefs_minigrid
         using TinyHugeNumbers
 
         grid_size = 3
-        beliefs = initialize_beliefs(grid_size, Float32)
+        beliefs = initialize_beliefs_minigrid(grid_size, Float32)
 
         # Calculate valid positions
         valid_positions = grid_size^2 - 2 * grid_size

@@ -3,8 +3,11 @@ using ReactiveMP
 using RxInfer
 using ProgressMeter
 using VideoIO
+import ImageCore: rawview, channelview
 using Colors
 using StableRNGs
+using Plots
+using FileIO
 import RxInfer: Categorical
 
 export TMazeConfig, run_tmaze_agent, run_tmaze_single_episode, tmaze_convert_action
@@ -22,7 +25,7 @@ Configuration for TMaze agent experiments.
 - `number_type::Type{T}`: Numeric type for computations
 - `visualize::Bool`: Whether to visualize the environment
 - `seed::Int`: Random seed
-- `record_episode::Bool`: Whether to record the last episode as video
+- `record_episode::Bool`: Whether to record episode frames as individual PNG files
 - `experiment_name::String`: Name of the experiment (for saving results)
 - `parallel::Bool`: Whether to run episodes in parallel
 """
@@ -66,11 +69,11 @@ function validate_config(config::TMazeConfig)
 end
 
 """
-    initialize_beliefs(T::Type{<:AbstractFloat})
+    initialize_beliefs_tmaze(T::Type{<:AbstractFloat})
 
 Initialize agent beliefs for the TMaze environment.
 """
-function initialize_beliefs(T::Type{<:AbstractFloat})
+function initialize_beliefs_tmaze(T::Type{<:AbstractFloat})
     # Initialize with uniform beliefs over states
     return TMazeBeliefs(
         location=Categorical(fill(T(1 / 5), 5)),
@@ -174,88 +177,6 @@ function execute_step(env, position_obs, reward_cue, beliefs, model, tensors, co
 end
 
 """
-    convert_to_rgb(env)
-
-Convert TMaze state to RGB visualization for recording.
-"""
-function convert_to_rgb(env)
-    height, width = 300, 300
-    img = zeros(UInt8, height, width, 3)
-
-    # Background color - light gray
-    img .= UInt8(240)
-
-    # Draw the T shape
-    # Vertical stem
-    img[100:250, 140:160, :] .= UInt8(200)
-    # Horizontal top
-    img[100:120, 60:240, :] .= UInt8(200)
-
-    # Draw agent (red circle)
-    agent_pos = env.agent_position
-
-    # Convert position to pixel coordinates
-    agent_x, agent_y = 0, 0
-    if agent_pos == (2, 1)  # Bottom
-        agent_x, agent_y = 150, 230
-    elseif agent_pos == (2, 2)  # Middle
-        agent_x, agent_y = 150, 150
-    elseif agent_pos == (1, 3)  # Top left
-        agent_x, agent_y = 75, 110
-    elseif agent_pos == (2, 3)  # Top middle
-        agent_x, agent_y = 150, 110
-    elseif agent_pos == (3, 3)  # Top right
-        agent_x, agent_y = 225, 110
-    end
-
-    # Draw agent
-    for dx in -10:10, dy in -10:10
-        if dx^2 + dy^2 <= 100  # Circle with radius 10
-            x, y = agent_x + dx, agent_y + dy
-            if 1 <= x <= width && 1 <= y <= height
-                img[y, x, 1] = 255  # Red component
-                img[y, x, 2] = 0
-                img[y, x, 3] = 0
-            end
-        end
-    end
-
-    # Draw reward locations
-    reward_position = env.reward_position
-
-    # Left reward
-    left_x, left_y = 75, 110
-    left_color = reward_position == :left ? [0, 255, 0] : [150, 150, 150]
-
-    # Right reward
-    right_x, right_y = 225, 110
-    right_color = reward_position == :right ? [0, 255, 0] : [150, 150, 150]
-
-    # Draw reward markers
-    for dx in -5:5, dy in -5:5
-        if dx^2 + dy^2 <= 25  # Circle with radius 5
-            # Left reward
-            x, y = left_x + dx, left_y + dy
-            if 1 <= x <= width && 1 <= y <= height
-                img[y, x, 1] = left_color[1]
-                img[y, x, 2] = left_color[2]
-                img[y, x, 3] = left_color[3]
-            end
-
-            # Right reward
-            x, y = right_x + dx, right_y + dy
-            if 1 <= x <= width && 1 <= y <= height
-                img[y, x, 1] = right_color[1]
-                img[y, x, 2] = right_color[2]
-                img[y, x, 3] = right_color[3]
-            end
-        end
-    end
-
-    return img
-end
-
-"""
     visualize_tmaze(env::TMaze)
 
 Simple visualization of the TMaze environment.
@@ -311,41 +232,6 @@ function visualize_tmaze(env::TMaze)
 end
 
 """
-    record_episode_to_video_tmaze(frames::Vector{Array{UInt8, 3}}, video_path::String)
-
-Save a sequence of frames to a video file.
-"""
-function record_episode_to_video_tmaze(frames::Vector{Array{UInt8,3}}, video_path::String="tmaze_episode.mp4")
-    if isempty(frames)
-        @warn "No frames to record"
-        return
-    end
-
-    # Ensure directory exists
-    video_dir = dirname(video_path)
-    if !isdir(video_dir)
-        mkpath(video_dir)
-    end
-
-    # Convert UInt8 arrays to RGB{N0f8} arrays
-    height, width, _ = size(frames[1])
-    rgb_frames = [RGB{Colors.N0f8}.(frames[i][:, :, 1] ./ 255, frames[i][:, :, 2] ./ 255, frames[i][:, :, 3] ./ 255)
-                  for i in 1:length(frames)]
-
-    # Set up encoder options
-    encoder_options = (crf=23, preset="medium")
-    framerate = 5
-
-    # Save video using VideoIO.save
-    VideoIO.save(video_path, rgb_frames;
-        framerate=framerate,
-        encoder_options=encoder_options
-    )
-
-    @info "Episode recorded to $video_path"
-end
-
-"""
     get_position_observation(env::TMaze)
 
 Get the position observation from the TMaze environment. 
@@ -381,7 +267,7 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
     env = create_tmaze(reward_position, (2, 2))  # Start at middle junction (2,2)
 
     # Initialize beliefs
-    beliefs = initialize_beliefs(config.number_type)
+    beliefs = initialize_beliefs_tmaze(config.number_type)
 
     # Initialize tracking variables
     total_reward = 0.0
@@ -391,8 +277,20 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
     next_action = MazeAction(East())
     next_action_idx = 2
 
-    # Initialize frames collection if recording
-    frames = record ? Vector{Array{UInt8,3}}() : nothing
+    # Get model name for frame saving
+    model_name = try
+        string(nameof(model))
+    catch
+        "unknown_model"
+    end
+
+    # Set up the directory for saving frames if requested
+    frames_dir = nothing
+    if record
+        # Create directory structure: results/tmaze/experiment_name/model_name/episode_seed
+        frames_dir = datadir("results", "tmaze", config.experiment_name, model_name, "episode_$(seed)")
+        mkpath(frames_dir)
+    end
 
     # Tracking data for detailed logging
     episode_data = Dict(
@@ -413,9 +311,10 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
     push!(episode_data["positions"], [env.agent_position...])
     push!(episode_data["timestamps"], 0)
 
-    # Record initial state if recording
+    # Save initial frame if requested
     if record
-        push!(frames, convert_to_rgb(env))
+        initial_plot = plot_tmaze(env)
+        save_frame(initial_plot, model_name, seed, 0, frames_dir)
     end
 
     # Visualization
@@ -458,11 +357,15 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
         push!(episode_data["action_names"], action_to_string(next_action_idx))
         push!(episode_data["rewards"], episode_reward)
         push!(episode_data["positions"], [env.agent_position...])
-        push!(episode_data["timestamps"], config.time_horizon - t + 1)
 
-        # Record frame if recording
+        # Current timestep (for frame numbering)
+        current_timestep = config.time_horizon - t + 1
+        push!(episode_data["timestamps"], current_timestep)
+
+        # Save current frame if requested
         if record
-            push!(frames, convert_to_rgb(env))
+            current_plot = plot_tmaze(env)
+            save_frame(current_plot, model_name, seed, current_timestep, frames_dir)
         end
 
         # Visualization update
@@ -474,13 +377,13 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
         if debug_mode
             action_str = action_to_string(next_action_idx)
             reward_str = isnothing(reward) ? "None" : reward
-            @info "Episode $(seed): t=$t, Position=$(env.agent_position), Action=$action_str, Reward=$reward_str"
+            @debug "Episode $(seed): t=$t, Position=$(env.agent_position), Action=$action_str, Reward=$reward_str"
         end
 
         # Check if goal reached
         if reward == 1
             if debug_mode
-                @info "Episode $(seed): Goal reached at t=$(t)!"
+                @debug "Episode $(seed): Goal reached at t=$(t)!"
             end
             break
         end
@@ -494,44 +397,9 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
     episode_data["final_position"] = [env.agent_position...]
     episode_data["seed"] = seed
 
-    # Save video if recording
-    if record && !isnothing(frames)
-        # Get model name from function object if possible
-        model_name = try
-            string(nameof(model))
-        catch
-            "unknown_model"
-        end
-
-        # Create the full path and ensure directory exists
-        video_dir = datadir("results", "tmaze", config.experiment_name)
-        mkpath(video_dir)
-        video_path = joinpath(video_dir, "$(model_name)_episode_$(seed).mp4")
-
-        record_episode_to_video_tmaze(frames, video_path)
-    end
-
     return total_reward, episode_data
 end
 
-"""
-    action_to_string(action_idx::Int)
-
-Convert action index to string representation.
-"""
-function action_to_string(action_idx::Int)
-    if action_idx == 1
-        return "North"
-    elseif action_idx == 2
-        return "East"
-    elseif action_idx == 3
-        return "South"
-    elseif action_idx == 4
-        return "West"
-    else
-        return "Unknown"
-    end
-end
 
 """
     run_tmaze_agent(model, config, goal;
@@ -568,8 +436,9 @@ function run_tmaze_agent(
     # Set up RNG
     rng = StableRNG(config.seed)
 
-    # Create directory for results if recording
+    # Create directory for results if recording episodes
     if config.record_episode
+        # Base directory for all experiment results
         mkpath(datadir("results", "tmaze", config.experiment_name))
     end
 
@@ -586,13 +455,13 @@ function run_tmaze_agent(
             thread_id = Threads.threadid()
             episode_seed = episode_seeds[i]
 
-            # Record only the last episode if record_episode is true
-            should_record = config.record_episode && i == config.n_episodes
+            # Record only the last episode or specific episodes if record_episode is true
+            should_record = config.record_episode && (i == config.n_episodes || config.record_episode == :all)
 
-            # Turn off visualization for parallel execution except for the recording episode
+            # Turn off visualization for parallel execution except for specific episodes
             local_config = config
             if should_record && config.visualize
-                # Keep visualization for recording
+                # Keep visualization for frame saving
             elseif use_parallel && config.visualize
                 # Create a copy with visualization turned off
                 local_config = TMazeConfig(
@@ -609,7 +478,7 @@ function run_tmaze_agent(
                 )
             end
 
-            rewards[i] = run_tmaze_single_episode(
+            rewards[i], _ = run_tmaze_single_episode(
                 model, tensors, local_config, goal, callbacks, episode_seed;
                 constraints_fn=constraints_fn,
                 initialization_fn=initialization_fn,
@@ -627,9 +496,10 @@ function run_tmaze_agent(
 
         @showprogress for i in 1:config.n_episodes
             episode_seed = episode_seeds[i]
-            # Record only the last episode if record_episode is true
-            should_record = config.record_episode && i == config.n_episodes
-            rewards[i] = run_tmaze_single_episode(
+            # Record only the last episode or specific episodes if record_episode is true
+            should_record = config.record_episode && (i == config.n_episodes || config.record_episode == :all)
+
+            rewards[i], _ = run_tmaze_single_episode(
                 model, tensors, config, goal, callbacks, episode_seed;
                 constraints_fn=constraints_fn,
                 initialization_fn=initialization_fn,

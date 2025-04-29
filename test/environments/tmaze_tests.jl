@@ -32,9 +32,9 @@
 
         # Middle junction (state 2)
         @test transition[4, 2, 1] == 1.0 # North -> Top middle
-        @test transition[5, 2, 2] == 1.0 # East -> Top right
+        @test transition[2, 2, 2] == 1.0 # East -> Top right
         @test transition[1, 2, 3] == 1.0 # South -> Bottom
-        @test transition[3, 2, 4] == 1.0 # West -> Top left
+        @test transition[2, 2, 4] == 1.0 # West -> Top left
 
         # Top left (state 3)
         @test transition[3, 3, 1] == 1.0 # North -> Stay (wall)
@@ -164,7 +164,16 @@ end
         @test reward_cue == [0.5, 0.5] # Uncertain at junction
         @test reward === 0.0 # No reward at junction
 
-        # Move west to left arm
+        # Move west from center (should stay in center)
+        pos_obs, reward_cue, reward = step!(env, MazeAction(West()))
+        @test env.agent_position == (2, 2) # Still at junction
+        @test position_to_index(env.agent_position) == 2
+        @test pos_obs == [0.0, 1.0, 0.0, 0.0, 0.0] # One-hot for position 2
+        @test reward_cue == [0.5, 0.5] # Uncertain at junction
+        @test reward == 0.0 # No reward at junction
+
+        # Move north then west to reach left arm
+        pos_obs, reward_cue, reward = step!(env, MazeAction(North()))
         pos_obs, reward_cue, reward = step!(env, MazeAction(West()))
         @test env.agent_position == (1, 3) # Top left
         @test position_to_index(env.agent_position) == 3
@@ -206,6 +215,7 @@ end
 
         # Test navigation from middle junction - move east
         env = create_tmaze(:left, (2, 2)) # Reset
+        pos_obs, reward_cue, reward = step!(env, MazeAction(North()))
         pos_obs, reward_cue, reward = step!(env, MazeAction(East()))
         @test env.agent_position == (3, 3) # Top right
         @test position_to_index(env.agent_position) == 5
@@ -213,6 +223,7 @@ end
 
         # Test navigation from middle junction - move west
         env = create_tmaze(:left, (2, 2)) # Reset
+        pos_obs, reward_cue, reward = step!(env, MazeAction(North()))
         pos_obs, reward_cue, reward = step!(env, MazeAction(West()))
         @test env.agent_position == (1, 3) # Top left
         @test position_to_index(env.agent_position) == 3
@@ -235,6 +246,7 @@ end
 
         # Navigate to left arm
         step!(env_left, MazeAction(North())) # To junction
+        step!(env_left, MazeAction(North())) # To top
         pos_obs, reward_cue, reward = step!(env_left, MazeAction(West())) # To left arm
         @test reward == 1.0 # Positive reward at left with :left setting
 
@@ -255,6 +267,7 @@ end
 
         # Navigate to left arm
         step!(env_right, MazeAction(North())) # To junction
+        step!(env_right, MazeAction(North())) # To top
         pos_obs, reward_cue, reward = step!(env_right, MazeAction(West())) # To left arm
         @test reward == -1.0 # Negative reward at left with :right setting
 

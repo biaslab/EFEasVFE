@@ -34,7 +34,7 @@ function parse_command_line()
     s.version = "1.0.0"
 
     @add_arg_table! s begin
-        "--time-horizon", "-t"
+        "--time-horizon"
         help = "Maximum number of steps per episode (default: 6)"
         arg_type = Int
         default = 6

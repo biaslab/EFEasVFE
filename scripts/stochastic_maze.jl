@@ -10,6 +10,8 @@ using Dates
 using JSON
 using FileIO
 using ArgParse
+using Plots
+pgfplotsx()
 import RxInfer: Categorical
 using EFEasVFE
 
@@ -55,6 +57,9 @@ function parse_command_line()
         help = "Name for the experiment (default: timestamp-based)"
         arg_type = String
         default = "stochastic_maze_$(Dates.format(now(), "yyyymmdd_HHMMSS"))"
+        "--tikz"
+        help = "Use PGFPlotsX backend and save frames as TikZ files instead of PNG"
+        action = :store_true
         "--debug", "-d"
         help = "Enable debug mode"
         action = :store_true
@@ -103,7 +108,8 @@ function parse_command_line()
         record_episode=args["record-episode"],
         experiment_name=args["experiment-name"],
         debug_mode=args["debug"],
-        save_results=save_results
+        save_results=save_results,
+        use_tikz=args["tikz"]
     )
 end
 
@@ -119,8 +125,16 @@ function run_stochastic_maze_experiment(;
     experiment_name::String="stochastic_maze_$(Dates.format(now(), "yyyymmdd_HHMMSS"))",
     log_dir::String=datadir("logs", "stochastic_maze"),
     save_results::Bool=true,
-    debug_mode::Bool=false
+    debug_mode::Bool=false,
+    use_tikz::Bool=false
 )
+    # Set the appropriate plotting backend
+    if use_tikz
+        pgfplotsx()
+    else
+        gr()
+    end
+
     # Create directory for logs
     results_dir = datadir("results", "stochastic_maze", experiment_name)
 
@@ -207,7 +221,8 @@ function run_stochastic_maze_experiment(;
             constraints_fn=klcontrol_stochastic_maze_agent_constraints,
             initialization_fn=klcontrol_stochastic_maze_agent_initialization,
             record=i == config.n_episodes && config.record_episode,
-            debug_mode=debug_mode
+            debug_mode=debug_mode,
+            use_tikz=use_tikz
         )
 
         kl_rewards[i] = reward
@@ -240,7 +255,8 @@ function run_stochastic_maze_experiment(;
             initialization_fn=efe_stochastic_maze_agent_initialization,
             record=i == config.n_episodes && config.record_episode,
             options=(force_marginal_computation=true,),
-            debug_mode=debug_mode
+            debug_mode=debug_mode,
+            use_tikz=use_tikz
         )
 
         efe_rewards[i] = reward
@@ -299,7 +315,8 @@ function main()
         number_type=args.number_type,
         experiment_name=args.experiment_name,
         save_results=args.save_results,
-        debug_mode=args.debug_mode
+        debug_mode=args.debug_mode,
+        use_tikz=args.use_tikz
     )
 end
 

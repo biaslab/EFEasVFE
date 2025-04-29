@@ -178,7 +178,7 @@ end
 Run a single episode in the StochasticMaze environment.
 """
 function run_stochastic_maze_single_episode(model, tensors, config, goal, callbacks, seed;
-    constraints_fn, initialization_fn, record=false, debug_mode=false, options=NamedTuple(), inference_kwargs...)
+    constraints_fn, initialization_fn, record=false, debug_mode=false, options=NamedTuple(), use_tikz=false, inference_kwargs...)
 
     # Set up RNG
     rng = StableRNG(seed)
@@ -240,7 +240,7 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
     # Save initial frame if requested
     if record
         initial_plot = visualize_stochastic_maze(env)
-        save_frame(initial_plot, model_name, seed, 0, frames_dir)
+        save_frame(initial_plot, model_name, seed, 0, frames_dir; use_tikz=use_tikz)
     end
 
     # Log initial state if in debug mode
@@ -283,7 +283,7 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
         # Save current frame if requested
         if record
             current_plot = visualize_stochastic_maze(env)
-            save_frame(current_plot, model_name, seed, current_timestep, frames_dir)
+            save_frame(current_plot, model_name, seed, current_timestep, frames_dir; use_tikz=use_tikz)
         end
 
         # Log step information if in debug mode
@@ -304,7 +304,8 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
         sleep(config.wait_time)
     end
 
-    if record
+    # Compile the frames into a video if recording and not using tikz
+    if record && !use_tikz
         # Compile the saved frames into a video
         video_path = datadir("results", "stochastic_maze", config.experiment_name, model_name, "episode_$(seed).mp4")
         convert_frames_to_video(frames_dir, video_path)

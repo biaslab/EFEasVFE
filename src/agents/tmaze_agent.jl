@@ -175,61 +175,6 @@ function execute_step(env, position_obs, reward_cue, beliefs, model, tensors, co
 end
 
 """
-    visualize_tmaze(env::TMaze)
-
-Simple visualization of the TMaze environment.
-"""
-function visualize_tmaze(env::TMaze)
-    # Define symbols for visualization
-    symbols = Dict(
-        "agent" => 'A',
-        "wall" => '█',
-        "empty" => ' ',
-        "reward_left" => 'L',
-        "reward_right" => 'R'
-    )
-
-    # Create a 3x3 grid for visualization
-    grid = fill(symbols["wall"], 3, 3)
-
-    # Mark the T shape
-    grid[3, 2] = symbols["empty"]  # Bottom
-    grid[2, 2] = symbols["empty"]  # Middle
-    grid[1, 1:3] .= symbols["empty"]  # Top
-
-    # Mark rewards
-    grid[1, 1] = symbols["reward_left"]
-    grid[1, 3] = symbols["reward_right"]
-
-    # Highlight the active reward
-    if env.reward_position == :left
-        grid[1, 1] = '*'
-    else
-        grid[1, 3] = '*'
-    end
-
-    # Place agent
-    agent_pos = env.agent_position
-    grid_x = agent_pos[2]  # Convert to grid coordinates
-    grid_y = agent_pos[1]
-
-    # Store original value
-    original = grid[grid_x, grid_y]
-    grid[grid_x, grid_y] = symbols["agent"]
-
-    # Print the grid
-    println("TMaze Environment:")
-    println("Reward position: $(env.reward_position)")
-    for i in 1:3
-        println(join(grid[i, :]))
-    end
-    println()
-
-    # Restore original value
-    grid[grid_x, grid_y] = original
-end
-
-"""
     get_position_observation(env::TMaze)
 
 Get the position observation from the TMaze environment. 
@@ -256,7 +201,7 @@ end
 Run a single episode in the TMaze environment.
 """
 function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
-    constraints_fn, initialization_fn, record=false, debug_mode=false, inference_kwargs...)
+    constraints_fn, initialization_fn, record=false, debug_mode=false, use_tikz=false, inference_kwargs...)
     # Set up RNG
     rng = StableRNG(seed)
 
@@ -312,7 +257,7 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
     # Save initial frame if requested
     if record
         initial_plot = plot_tmaze(env)
-        save_frame(initial_plot, model_name, seed, 0, frames_dir)
+        save_frame(initial_plot, model_name, seed, 0, frames_dir; use_tikz=use_tikz)
     end
 
     # Log initial state if in debug mode
@@ -358,7 +303,7 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
         # Save current frame if requested
         if record
             current_plot = plot_tmaze(env)
-            save_frame(current_plot, model_name, seed, current_timestep, frames_dir)
+            save_frame(current_plot, model_name, seed, current_timestep, frames_dir; use_tikz=use_tikz)
         end
 
         # Log step information if in debug mode
@@ -380,8 +325,8 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
         sleep(config.wait_time)
     end
 
-    # Compile the frames into a video if recording
-    if record
+    # Compile the frames into a video if recording and not using tikz
+    if record && !use_tikz
         video_path = datadir("results", "tmaze", config.experiment_name, model_name, "episode_$(seed).mp4")
         convert_frames_to_video(frames_dir, video_path)
     end

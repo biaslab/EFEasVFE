@@ -22,18 +22,16 @@ Configuration for TMaze agent experiments.
 - `n_episodes::Int`: Number of episodes to run
 - `n_iterations::Int`: Number of inference iterations per step
 - `wait_time::Float64`: Time to wait between steps (for visualization)
-- `number_type::Type{T}`: Numeric type for computations
 - `seed::Int`: Random seed
 - `record_episode::Bool`: Whether to record episode frames as individual PNG files
 - `experiment_name::String`: Name of the experiment (for saving results)
 - `parallel::Bool`: Whether to run episodes in parallel
 """
-Base.@kwdef struct TMazeConfig{T<:AbstractFloat}
+Base.@kwdef struct TMazeConfig
     time_horizon::Int
     n_episodes::Int
     n_iterations::Int
     wait_time::Float64
-    number_type::Type{T}
     seed::Int
     record_episode::Bool = false
     experiment_name::String
@@ -46,12 +44,12 @@ end
 Container for agent's beliefs about the TMaze environment.
 
 # Fields
-- `location::Categorical{T}`: Belief about current location (5 possible states)
-- `reward_location::Categorical{T}`: Belief about reward location (left or right)
+- `location::Categorical{Float64}`: Belief about current location (5 possible states)
+- `reward_location::Categorical{Float64}`: Belief about reward location (left or right)
 """
-Base.@kwdef mutable struct TMazeBeliefs{T<:AbstractFloat}
-    location::Categorical{T}
-    reward_location::Categorical{T}
+Base.@kwdef mutable struct TMazeBeliefs
+    location::Categorical{Float64}
+    reward_location::Categorical{Float64}
 end
 
 """
@@ -67,15 +65,15 @@ function validate_config(config::TMazeConfig)
 end
 
 """
-    initialize_beliefs_tmaze(T::Type{<:AbstractFloat})
+    initialize_beliefs_tmaze()
 
 Initialize agent beliefs for the TMaze environment.
 """
-function initialize_beliefs_tmaze(T::Type{<:AbstractFloat})
+function initialize_beliefs_tmaze()
     # Initialize with uniform beliefs over states
     return TMazeBeliefs(
-        location=Categorical(fill(T(1 / 5), 5)),
-        reward_location=Categorical([T(0.5), T(0.5)])
+        location=Categorical(fill(1.0 / 5, 5)),
+        reward_location=Categorical([0.5, 0.5])
     )
 end
 
@@ -127,15 +125,15 @@ Takes current observations and returns the next planned action.
 function execute_step(env, position_obs, reward_cue, beliefs, model, tensors, config, goal, callbacks, time_remaining, previous_result, previous_action;
     constraints_fn, initialization_fn, inference_kwargs...)
     # Convert previous action to one-hot encoding
-    previous_action_vec = zeros(config.number_type, 4)
+    previous_action_vec = zeros(Float64, 4)
     if previous_action.direction isa North
-        previous_action_vec[1] = one(config.number_type)
+        previous_action_vec[1] = one(Float64)
     elseif previous_action.direction isa East
-        previous_action_vec[2] = one(config.number_type)
+        previous_action_vec[2] = one(Float64)
     elseif previous_action.direction isa South
-        previous_action_vec[3] = one(config.number_type)
+        previous_action_vec[3] = one(Float64)
     elseif previous_action.direction isa West
-        previous_action_vec[4] = one(config.number_type)
+        previous_action_vec[4] = one(Float64)
     end
 
     # Get initialization from previous results or initialize fresh
@@ -210,7 +208,7 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
     env = create_tmaze(reward_position, (2, 2))  # Start at middle junction (2,2)
 
     # Initialize beliefs
-    beliefs = initialize_beliefs_tmaze(config.number_type)
+    beliefs = initialize_beliefs_tmaze()
 
     # Initialize tracking variables
     total_reward = 0.0
@@ -247,8 +245,8 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
     )
 
     # Initial position observation and reward cue
-    position_obs = convert.(config.number_type, get_position_observation(env))
-    reward_cue = convert.(config.number_type, get_reward_cue(env))
+    position_obs = convert.(Float64, get_position_observation(env))
+    reward_cue = convert.(Float64, get_reward_cue(env))
 
     # Record initial state
     push!(episode_data["positions"], [env.agent_position...])
@@ -283,8 +281,8 @@ function run_tmaze_single_episode(model, tensors, config, goal, callbacks, seed;
         position_obs, reward_cue, reward = step!(env, next_action)
 
         # Convert to the required numeric type
-        position_obs = convert.(config.number_type, position_obs)
-        reward_cue = convert.(config.number_type, reward_cue)
+        position_obs = convert.(Float64, position_obs)
+        reward_cue = convert.(Float64, reward_cue)
 
         # Update total reward
         episode_reward = reward isa Number ? reward : 0
@@ -408,7 +406,6 @@ function run_tmaze_agent(
                     n_episodes=config.n_episodes,
                     n_iterations=config.n_iterations,
                     wait_time=config.wait_time,
-                    number_type=config.number_type,
                     seed=config.seed,
                     record_episode=config.record_episode,
                     experiment_name=config.experiment_name,

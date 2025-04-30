@@ -550,7 +550,7 @@ function visualize_stochastic_maze(env::StochasticMaze)
         x, y = state_to_xy(state, grid_size_x)
         color = reward > 0 ? MAZE_THEME.reward_positive : MAZE_THEME.reward_negative
         opacity = min(abs(reward), 1.0) # Use absolute value of reward for opacity, capped at 1.0
-        scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity, markersize=ceil(Int, scale))
+        scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity, markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15))
     end
 
     # Plot observation noise
@@ -583,7 +583,7 @@ function visualize_stochastic_maze(env::StochasticMaze)
 
     # Plot agent
     x, y = state_to_xy(env.agent_state, grid_size_x)
-    scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=MAZE_THEME.agent, markersize=ceil(Int, (2 / 3) * scale))
+    scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=MAZE_THEME.agent, markersize=ceil(Int, (2 / 3) * scale), markerstrokewidth=ceil(Int, scale / 15))
 
     return p
 end

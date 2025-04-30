@@ -50,10 +50,6 @@ function parse_command_line()
         help = "Time to wait between steps in seconds (default: 0.0)"
         arg_type = Float64
         default = 0.0
-        "--number-type", "-n"
-        help = "Number type to use (default: Float64)"
-        arg_type = Symbol
-        default = :Float64
         "--seed", "-s"
         help = "Random seed for the experiment"
         arg_type = Int
@@ -87,17 +83,6 @@ function parse_command_line()
     args["n-iterations"] > 0 || throw(ArgumentError("n-iterations must be positive"))
     args["wait-time"] >= 0 || throw(ArgumentError("wait-time must be non-negative"))
 
-    # Convert number type string to actual type
-    number_type = if args["number-type"] == :Float32
-        Float32
-    elseif args["number-type"] == :Float64
-        Float64
-    elseif args["number-type"] == :Float16
-        Float16
-    else
-        throw(ArgumentError("Unsupported number type: $(args["number-type"])"))
-    end
-
     # Handle save_results argument logic
     save_results = true
     if args["no-save-results"]
@@ -111,7 +96,6 @@ function parse_command_line()
         n_episodes=args["n-episodes"],
         n_iterations=args["n-iterations"],
         wait_time=args["wait-time"],
-        number_type=number_type,
         seed=args["seed"],
         record_episode=args["record-episode"],
         experiment_name=args["experiment-name"],
@@ -128,7 +112,6 @@ function run_tmaze_experiment(;
     wait_time::Float64=0.0,
     record_episode::Bool=false,
     seed::Int=123,
-    number_type::Type{<:AbstractFloat}=Float64,
     experiment_name::String="tmaze_$(Dates.format(now(), "yyyymmdd_HHMMSS"))",
     log_dir::String=datadir("logs", "tmaze"),
     save_results::Bool=true,
@@ -152,7 +135,7 @@ function run_tmaze_experiment(;
     end
 
     # Create goal distribution - prefer the left arm location (state 3)
-    left_goal = zeros(number_type, 5)
+    left_goal = zeros(Float64, 5)
     left_goal[3] = 1.0
     left_goal_distribution = Categorical(left_goal)
 
@@ -162,7 +145,6 @@ function run_tmaze_experiment(;
         n_episodes=n_episodes,
         n_iterations=n_iterations,
         wait_time=wait_time,
-        number_type=number_type,
         seed=seed,
         record_episode=record_episode,
         experiment_name=experiment_name
@@ -312,7 +294,6 @@ function main()
         wait_time=args.wait_time,
         record_episode=args.record_episode,
         seed=args.seed,
-        number_type=args.number_type,
         experiment_name=args.experiment_name,
         save_results=args.save_results,
         debug_mode=args.debug_mode,

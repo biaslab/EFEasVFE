@@ -715,7 +715,8 @@ function plot_tmaze(env::TMaze)
         frame=:none,
         margin=0Plots.mm,
     )
-    scale = 30
+    scale = 20
+
 
     # Vertical corridor
     Plots.plot!(p, [1, 2], [1, 4], color=MAZE_THEME.corridor, linewidth=0, fill=true, fillcolor=MAZE_THEME.corridor)
@@ -740,19 +741,28 @@ function plot_tmaze(env::TMaze)
     Plots.plot!(p, [0, 0], [3, 4], color=MAZE_THEME.wall, linewidth=2)  # Left wall
     Plots.plot!(p, [3, 3], [3, 4], color=MAZE_THEME.wall, linewidth=2)  # Right wall
 
+    # Draw grid lines between cells
+    # Horizontal lines
+    Plots.plot!(p, [1, 2], [2, 2], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7)  # Bottom to middle
+    Plots.plot!(p, [1, 2], [3, 3], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7)  # Middle to top
+
+    # Vertical lines at top
+    Plots.plot!(p, [1, 1], [3, 4], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7)  # Top to top-left
+    Plots.plot!(p, [2, 2], [3, 4], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7)  # Top to top-right
+
     # Draw reward locations with clear indicators
     reward_position = env.reward_position
 
     # The left reward location (left arm of the T)
     left_color = reward_position == :left ? MAZE_THEME.reward_positive : MAZE_THEME.reward_negative
-    Plots.scatter!(p, [0.5], [3.5], markersize=ceil(Int, scale), color=left_color, alpha=0.7)
+    Plots.scatter!(p, [0.5], [3.5], markersize=ceil(Int, scale), color=left_color, alpha=0.7, markerstrokewidth=ceil(Int, scale / 15))
 
     # The right reward location (right arm of the T)
     right_color = reward_position == :right ? MAZE_THEME.reward_positive : MAZE_THEME.reward_negative
-    Plots.scatter!(p, [2.5], [3.5], markersize=ceil(Int, scale), color=right_color, alpha=0.7)
+    Plots.scatter!(p, [2.5], [3.5], markersize=ceil(Int, scale), color=right_color, alpha=0.7, markerstrokewidth=ceil(Int, scale / 15))
 
     # Draw cue location (bottom middle)
-    Plots.scatter!(p, [1.5], [1.5], markersize=ceil(Int, scale), color=MAZE_THEME.cue, alpha=0.7)
+    Plots.scatter!(p, [1.5], [1.5], markersize=ceil(Int, scale), color=MAZE_THEME.cue, alpha=0.7, markerstrokewidth=ceil(Int, scale / 15))
 
     # Convert agent position to plot coordinates
     x, y = 0, 0
@@ -775,11 +785,6 @@ function plot_tmaze(env::TMaze)
     end
 
     # Draw agent as a circle with a black border
-    Plots.scatter!(p, [x], [y], markersize=ceil(Int, (2 / 3) * scale), color=MAZE_THEME.agent, markerstrokewidth=1, markerstrokecolor=MAZE_THEME.wall)
-
-    # Add an informative caption showing the reward location
-    caption = "TMaze - Reward location: $(uppercase(string(reward_position)))"
-    Plots.title!(p, caption, titlefontsize=ceil(Int, scale / 2))
-
+    Plots.scatter!(p, [x], [y], markersize=ceil(Int, (2 / 3) * scale), color=MAZE_THEME.agent, markerstrokewidth=ceil(Int, scale / 15), markerstrokecolor=MAZE_THEME.wall)
     return p
 end

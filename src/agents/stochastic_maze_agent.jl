@@ -24,18 +24,16 @@ Configuration for StochasticMaze agent experiments.
 - `n_episodes::Int`: Number of episodes to run
 - `n_iterations::Int`: Number of inference iterations per step
 - `wait_time::Float64`: Time to wait between steps (for visualization)
-- `number_type::Type{T}`: Numeric type for computations
 - `seed::Int`: Random seed
 - `record_episode::Bool`: Whether to record episode frames as individual PNG files
 - `experiment_name::String`: Name of the experiment (for saving results)
 - `parallel::Bool`: Whether to run episodes in parallel
 """
-Base.@kwdef struct StochasticMazeConfig{T<:AbstractFloat}
+Base.@kwdef struct StochasticMazeConfig
     time_horizon::Int
     n_episodes::Int
     n_iterations::Int
     wait_time::Float64
-    number_type::Type{T}
     seed::Int
     record_episode::Bool = false
     experiment_name::String
@@ -48,10 +46,10 @@ end
 Container for agent's beliefs about the StochasticMaze environment.
 
 # Fields
-- `state::Categorical{T}`: Belief about current state
+- `state::Categorical{Float64}`: Belief about current state
 """
-Base.@kwdef mutable struct StochasticMazeBeliefs{T<:AbstractFloat}
-    state::Categorical{T}
+Base.@kwdef mutable struct StochasticMazeBeliefs
+    state::Categorical{Float64}
 end
 
 """
@@ -67,14 +65,14 @@ function validate_config(config::StochasticMazeConfig)
 end
 
 """
-    initialize_beliefs_stochastic_maze(n_states::Int, T::Type{<:AbstractFloat})
+    initialize_beliefs_stochastic_maze(n_states::Int)
 
 Initialize agent beliefs for the StochasticMaze environment.
 """
-function initialize_beliefs_stochastic_maze(n_states::Int, T::Type{<:AbstractFloat})
+function initialize_beliefs_stochastic_maze(n_states::Int)
     # Initialize with uniform beliefs over states
     return StochasticMazeBeliefs(
-        state=Categorical(fill(T(1.0 / n_states), n_states))
+        state=Categorical(fill(1.0 / n_states, n_states))
     )
 end
 
@@ -103,9 +101,9 @@ function execute_step(env, observation, beliefs, model, tensors, config, goal, c
 
     # Convert previous action to one-hot encoding
     n_actions = 4
-    previous_action_vec = zeros(config.number_type, n_actions)
+    previous_action_vec = zeros(Float64, n_actions)
     if !isnothing(previous_action)
-        previous_action_vec[previous_action.index] = one(config.number_type)
+        previous_action_vec[previous_action.index] = one(Float64)
     end
 
     # Get initialization from previous results or initialize fresh
@@ -113,8 +111,8 @@ function execute_step(env, observation, beliefs, model, tensors, config, goal, c
     initialization = initialization_fn(n_states)
 
     # Create observation vector
-    observation_vec = zeros(config.number_type, n_states)
-    observation_vec[observation] = one(config.number_type)
+    observation_vec = zeros(Float64, n_states)
+    observation_vec[observation] = one(Float64)
 
     # Run inference
     result = infer(
@@ -191,7 +189,7 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
 
     # Initialize beliefs
     n_states = size(tensors.transition_tensor, 1)
-    beliefs = initialize_beliefs_stochastic_maze(n_states, config.number_type)
+    beliefs = initialize_beliefs_stochastic_maze(n_states)
 
     # Initialize tracking variables
     total_reward = 0.0

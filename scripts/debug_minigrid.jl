@@ -18,7 +18,7 @@ import Colors: N0f8
 using EFEasVFE
 using Plots
 
-import EFEasVFE: create_environment, execute_initial_action, step_environment, initialize_beliefs, convert_frame, execute_step
+import EFEasVFE: create_environment, execute_initial_action, step_environment, initialize_beliefs_minigrid, convert_frame, execute_step
 import EFEasVFE: efe_minigrid_agent, efe_minigrid_agent_constraints, efe_minigrid_agent_initialization
 import EFEasVFE: klcontrol_minigrid_agent, klcontrol_minigrid_agent_constraints, klcontrol_minigrid_agent_initialization
 
@@ -188,7 +188,7 @@ function main()
     ))
     @info "Initialized environment"
     # Initialize beliefs and tensors
-    beliefs = initialize_beliefs(config.grid_size, config.number_type)
+    beliefs = initialize_beliefs_minigrid(config.grid_size, config.number_type)
     tensors = load_tensors(
         config.grid_size,
         config.number_type;

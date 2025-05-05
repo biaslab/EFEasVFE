@@ -65,6 +65,9 @@ function parse_command_line()
         "--no-save-results"
         help = "Don't save experiment results"
         action = :store_true
+        "--show-legend"
+        help = "Show legend in visualizations explaining the maze elements"
+        action = :store_true
     end
 
     args = parse_args(s)
@@ -93,7 +96,8 @@ function parse_command_line()
         experiment_name=args["experiment-name"],
         debug_mode=args["debug"],
         save_results=save_results,
-        use_tikz=args["tikz"]
+        use_tikz=args["tikz"],
+        show_legend=args["show-legend"]
     )
 end
 
@@ -109,7 +113,8 @@ function run_stochastic_maze_experiment(;
     log_dir::String=datadir("logs", "stochastic_maze"),
     save_results::Bool=true,
     debug_mode::Bool=false,
-    use_tikz::Bool=false
+    use_tikz::Bool=false,
+    show_legend::Bool=false
 )
     # Set the appropriate plotting backend
     if use_tikz
@@ -204,7 +209,8 @@ function run_stochastic_maze_experiment(;
             initialization_fn=klcontrol_stochastic_maze_agent_initialization,
             record=i == config.n_episodes && config.record_episode,
             debug_mode=debug_mode,
-            use_tikz=use_tikz
+            use_tikz=use_tikz,
+            show_legend=show_legend
         )
 
         kl_rewards[i] = reward
@@ -238,7 +244,8 @@ function run_stochastic_maze_experiment(;
             record=i == config.n_episodes && config.record_episode,
             options=(force_marginal_computation=true,),
             debug_mode=debug_mode,
-            use_tikz=use_tikz
+            use_tikz=use_tikz,
+            show_legend=show_legend
         )
 
         efe_rewards[i] = reward
@@ -297,7 +304,8 @@ function main()
         experiment_name=args.experiment_name,
         save_results=args.save_results,
         debug_mode=args.debug_mode,
-        use_tikz=args.use_tikz
+        use_tikz=args.use_tikz,
+        show_legend=args.show_legend
     )
 end
 

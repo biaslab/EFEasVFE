@@ -161,20 +161,20 @@ Returns a tuple of (observation, reward).
 # Returns
 - `Tuple{Int,Float64}`: The resulting observation and reward
 """
-function step!(env::StochasticMaze, action::StochasticMazeAction)
+function step!(rng, env::StochasticMaze, action::StochasticMazeAction)
     # Get the current state
     current_state = env.agent_state
 
     # Sample the next state from the transition distribution
     probs = env.transition_tensor[:, current_state, action.index]
-    next_state = rand(Categorical(probs))
+    next_state = rand(rng, Categorical(probs))
 
     # Update the agent's state
     env.agent_state = next_state
 
     # Sample an observation from the observation matrix
     probs = env.observation_matrix[:, next_state]
-    observation = rand(Categorical(probs))
+    observation = rand(rng, Categorical(probs))
 
     # Calculate reward
     reward = 0.0
@@ -438,13 +438,6 @@ function generate_maze_tensors(grid_size_x::Int, grid_size_y::Int, n_actions::In
     # Define reward states
     reward_states = [(9, -1.0), (19, -1.0), (15, 1.0)]
 
-    # Add noisy states to reward states with small negative reward
-    for s in 1:n_states
-        if A[s, s] < 1.0  # If diagonal element is less than 1, it's a noisy state
-            push!(reward_states, (s, -0.1))
-        end
-    end
-
     return A, B, reward_states
 end
 
@@ -489,52 +482,55 @@ function generate_goal_distributions(n_states::Int, goal_state::Int, T::Int)
 end
 
 """
-    visualize_stochastic_maze(env::StochasticMaze)
+    visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
 
 Visualize the StochasticMaze environment using Plots.jl.
 
 # Arguments
 - `env::StochasticMaze`: The environment to visualize
+- `show_legend::Bool=false`: Whether to show the legend explaining the colors
 
 # Returns
 - `Plots.Plot`: A plot of the maze
 """
-function visualize_stochastic_maze(env::StochasticMaze)
+function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
     # Get grid dimensions
     grid_size_x = env.grid_size_x
     grid_size_y = env.grid_size_y
 
     # Create a new plot with appropriate size and aspect ratio
     p = plot(
-        size=(600, 600),
+        size=show_legend ? (950, 700) : (600, 600),  # Larger size when showing legend
         aspect_ratio=:equal,
         xlim=(0, grid_size_x),
         ylim=(0, grid_size_y),
-        legend=false,
+        legend=show_legend,      # Show legend only if requested
         grid=false,
         ticks=false,
         border=:none,
-        background=MAZE_THEME.background
+        background=MAZE_THEME.background,
+        fontfamily="Computer Modern"  # More paper-like font
     )
 
-    scale = 15
+    # Increase scale for better visibility in papers
+    scale = show_legend ? 18 : 15
 
-    # Draw border walls
+    # Draw border walls with increased linewidth for better visibility
     # Left wall
-    plot!(p, [0, 0], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=2)
+    plot!(p, [0, 0], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=3, label=nothing)
     # Right wall  
-    plot!(p, [grid_size_x, grid_size_x], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=2)
+    plot!(p, [grid_size_x, grid_size_x], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=3, label=nothing)
     # Bottom wall
-    plot!(p, [0, grid_size_x], [0, 0], color=MAZE_THEME.wall, linewidth=2)
+    plot!(p, [0, grid_size_x], [0, 0], color=MAZE_THEME.wall, linewidth=3, label=nothing)
     # Top wall
-    plot!(p, [0, grid_size_x], [grid_size_y, grid_size_y], color=MAZE_THEME.wall, linewidth=2)
+    plot!(p, [0, grid_size_x], [grid_size_y, grid_size_y], color=MAZE_THEME.wall, linewidth=3, label=nothing)
 
     # Draw grid lines
     for x in 0:grid_size_x
-        plot!(p, [x, x], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7)
+        plot!(p, [x, x], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7, label=nothing)
     end
     for y in 0:grid_size_y
-        plot!(p, [0, grid_size_x], [y, y], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7)
+        plot!(p, [0, grid_size_x], [y, y], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7, label=nothing)
     end
 
     # Plot sink states
@@ -542,15 +538,45 @@ function visualize_stochastic_maze(env::StochasticMaze)
         # Plot a filled rectangle for sink states
         x_coords = [x - 1, x, x, x - 1, x - 1]
         y_coords = [grid_size_y - y, grid_size_y - y, grid_size_y - y + 1, grid_size_y - y + 1, grid_size_y - y]
-        plot!(p, x_coords, y_coords, color=MAZE_THEME.sink, alpha=0.3, fill=true)
+        plot!(p, x_coords, y_coords, color=MAZE_THEME.sink, alpha=0.6, fill=true, label=nothing)
+    end
+
+    # Add a legend entry for sink states if showing legend
+    if show_legend
+        plot!(p, [], [], color=MAZE_THEME.sink, alpha=0.6, fill=true,
+            label="Sink state", linewidth=2, markerstrokewidth=2)
     end
 
     # Plot reward states
+    has_positive = false
+    has_negative = false
     for (state, reward) in env.reward_states
         x, y = state_to_xy(state, grid_size_x)
         color = reward > 0 ? MAZE_THEME.reward_positive : MAZE_THEME.reward_negative
         opacity = min(abs(reward), 1.0) # Use absolute value of reward for opacity, capped at 1.0
-        scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity, markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15))
+
+        # Add to legend only for the first instance of each reward type if showing legend
+        if show_legend
+            if reward > 0 && !has_positive
+                scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity,
+                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15),
+                    label="Positive reward")
+                has_positive = true
+            elseif reward < 0 && !has_negative
+                scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity,
+                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15),
+                    label="Negative reward")
+                has_negative = true
+            else
+                scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity,
+                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15),
+                    label=nothing)
+            end
+        else
+            scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity,
+                markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15),
+                label=nothing)
+        end
     end
 
     # Plot observation noise
@@ -561,11 +587,18 @@ function visualize_stochastic_maze(env::StochasticMaze)
             # Plot a filled rectangle for noisy states
             x_coords = [x - 1, x, x, x - 1, x - 1]
             y_coords = [grid_size_y - y, grid_size_y - y, grid_size_y - y + 1, grid_size_y - y + 1, grid_size_y - y]
-            plot!(p, x_coords, y_coords, color=MAZE_THEME.noisy, alpha=noise, fill=true)
+            plot!(p, x_coords, y_coords, color=MAZE_THEME.noisy, alpha=noise, fill=true, label=nothing)
         end
     end
 
+    # Add a legend entry for observation noise if showing legend
+    if show_legend
+        plot!(p, [], [], color=MAZE_THEME.noisy, alpha=0.6, fill=true,
+            label="Observation noise", linewidth=2, markerstrokewidth=2)
+    end
+
     # Plot stochastic states (bridge effect)
+    has_stochastic = false
     for (x, y) in env.stochastic_states
         # Draw 3 horizontal planks
         for i in 0:2
@@ -577,13 +610,33 @@ function visualize_stochastic_maze(env::StochasticMaze)
                 grid_size_y - y + 0.32 + i * 0.25,
                 grid_size_y - y + 0.25 + i * 0.25
             ]
-            plot!(p, x_coords, y_coords, color=MAZE_THEME.stochastic, alpha=0.6, fill=true)
+
+            # Add to legend only for the first plank of the first stochastic state if showing legend
+            if show_legend && !has_stochastic && i == 0
+                plot!(p, x_coords, y_coords, color=MAZE_THEME.stochastic, alpha=0.6, fill=true,
+                    label="Stochastic transition", linewidth=2, markerstrokewidth=2)
+                has_stochastic = true
+            else
+                plot!(p, x_coords, y_coords, color=MAZE_THEME.stochastic, alpha=0.6, fill=true,
+                    label=nothing)
+            end
         end
     end
 
     # Plot agent
     x, y = state_to_xy(env.agent_state, grid_size_x)
-    scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=MAZE_THEME.agent, markersize=ceil(Int, (2 / 3) * scale), markerstrokewidth=ceil(Int, scale / 15))
+    scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=MAZE_THEME.agent,
+        markersize=ceil(Int, (2 / 3) * scale), markerstrokewidth=ceil(Int, scale / 15),
+        label=show_legend ? "Agent" : nothing)
+
+    # Configure legend if showing
+    if show_legend
+        plot!(p, legend=:outerright, legendfontsize=18, legendtitle="Maze Elements",
+            legendtitlefontsize=20, legendtitlealign=:center,
+            margin=10Plots.mm, widen=true, foreground_color_legend=:black,
+            background_color_legend=:white, framestyle=:box,
+            legendmarkersize=18)
+    end
 
     return p
 end

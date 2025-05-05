@@ -176,7 +176,8 @@ end
 Run a single episode in the StochasticMaze environment.
 """
 function run_stochastic_maze_single_episode(model, tensors, config, goal, callbacks, seed;
-    constraints_fn, initialization_fn, record=false, debug_mode=false, options=NamedTuple(), use_tikz=false, inference_kwargs...)
+    constraints_fn, initialization_fn, record=false, debug_mode=false, options=NamedTuple(), use_tikz=false,
+    show_legend=false, inference_kwargs...)
 
     # Set up RNG
     rng = StableRNG(seed)
@@ -237,7 +238,7 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
 
     # Save initial frame if requested
     if record
-        initial_plot = visualize_stochastic_maze(env)
+        initial_plot = visualize_stochastic_maze(env; show_legend=show_legend)
         save_frame(initial_plot, model_name, seed, 0, frames_dir; use_tikz=use_tikz)
     end
 
@@ -262,7 +263,7 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
         previous_result = result
 
         # Execute the planned action and get observations and reward
-        observation, reward = step!(env, next_action)
+        observation, reward = step!(rng, env, next_action)
 
         # Update total reward
         total_reward += reward
@@ -280,7 +281,7 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
 
         # Save current frame if requested
         if record
-            current_plot = visualize_stochastic_maze(env)
+            current_plot = visualize_stochastic_maze(env; show_legend=show_legend)
             save_frame(current_plot, model_name, seed, current_timestep, frames_dir; use_tikz=use_tikz)
         end
 

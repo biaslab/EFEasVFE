@@ -500,7 +500,7 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
 
     # Create a new plot with appropriate size and aspect ratio
     p = plot(
-        size=show_legend ? (950, 700) : (600, 600),  # Larger size when showing legend
+        size=show_legend ? (950, 700) : (600, 600),  # Square format when no legend
         aspect_ratio=:equal,
         xlim=(0, grid_size_x),
         ylim=(0, grid_size_y),
@@ -512,8 +512,8 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
         fontfamily="Computer Modern"  # More paper-like font
     )
 
-    # Increase scale for better visibility in papers
-    scale = show_legend ? 18 : 15
+    # Use same enhanced scale regardless of legend
+    scale = 18
 
     # Draw border walls with increased linewidth for better visibility
     # Left wall
@@ -527,10 +527,10 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
 
     # Draw grid lines
     for x in 0:grid_size_x
-        plot!(p, [x, x], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7, label=nothing)
+        plot!(p, [x, x], [0, grid_size_y], color=MAZE_THEME.wall, linewidth=0.7, alpha=0.7, label=nothing)
     end
     for y in 0:grid_size_y
-        plot!(p, [0, grid_size_x], [y, y], color=MAZE_THEME.wall, linewidth=0.5, alpha=0.7, label=nothing)
+        plot!(p, [0, grid_size_x], [y, y], color=MAZE_THEME.wall, linewidth=0.7, alpha=0.7, label=nothing)
     end
 
     # Plot sink states
@@ -559,22 +559,22 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
         if show_legend
             if reward > 0 && !has_positive
                 scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity,
-                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15),
+                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 12),
                     label="Positive reward")
                 has_positive = true
             elseif reward < 0 && !has_negative
                 scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity,
-                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15),
+                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 12),
                     label="Negative reward")
                 has_negative = true
             else
                 scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity,
-                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15),
+                    markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 12),
                     label=nothing)
             end
         else
             scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=color, alpha=opacity,
-                markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 15),
+                markersize=ceil(Int, scale), markerstrokewidth=ceil(Int, scale / 12),
                 label=nothing)
         end
     end
@@ -626,8 +626,8 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
     # Plot agent
     x, y = state_to_xy(env.agent_state, grid_size_x)
     scatter!(p, [x - 0.5], [grid_size_y - y + 0.5], color=MAZE_THEME.agent,
-        markersize=ceil(Int, (2 / 3) * scale), markerstrokewidth=ceil(Int, scale / 15),
-        label=show_legend ? "Agent" : nothing)
+        markersize=ceil(Int, (3 / 4) * scale), markerstrokewidth=ceil(Int, scale / 12),
+        label=show_legend ? "Agent position" : nothing)
 
     # Configure legend if showing
     if show_legend

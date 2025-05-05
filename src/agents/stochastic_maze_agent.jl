@@ -299,6 +299,12 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
             break
         end
 
+        if reward == -1.0
+            if debug_mode
+                @debug "Episode $(seed): Negative reward at t=$(t)!"
+            end
+        end
+
         # Delay for visualization
         sleep(config.wait_time)
     end
@@ -314,7 +320,7 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
     episode_data["total_reward"] = total_reward
     episode_data["final_state"] = env.agent_state
     episode_data["seed"] = seed
-
+    @debug "Episode $(seed) finished with total reward $(total_reward)"
     return total_reward, episode_data
 end
 

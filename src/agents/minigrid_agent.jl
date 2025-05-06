@@ -691,10 +691,8 @@ function run_minigrid_agent(
 
     # Calculate mean first observation times for key and door
     # Filter out T+1 (never visible) and 0 (visible from start)
-    valid_key_times = [stats.first_key_visible for stats in all_stats
-                       if stats.first_key_visible > 0]
-    valid_door_times = [stats.first_door_visible for stats in all_stats
-                        if stats.first_door_visible > 0]
+    valid_key_times = filter(t -> t > 0, [stats.first_key_visible for stats in all_stats])
+    valid_door_times = filter(t -> t > 0, [stats.first_door_visible for stats in all_stats])
 
     # Count visibility stats
     key_never_visible = count(stats -> stats.first_key_visible > stats.time_horizon, all_stats)
@@ -705,6 +703,8 @@ function run_minigrid_agent(
     # Calculate means only for valid times
     mean_key_visible_time = isempty(valid_key_times) ? -1.0 : mean(valid_key_times)
     mean_door_visible_time = isempty(valid_door_times) ? -1.0 : mean(valid_door_times)
+    std_key_visible_time = isempty(valid_key_times) ? -1.0 : std(valid_key_times)
+    std_door_visible_time = isempty(valid_door_times) ? -1.0 : std(valid_door_times)
 
     # Return both aggregate statistics and all individual episode statistics
     return (
@@ -712,7 +712,9 @@ function run_minigrid_agent(
         std_reward=std_reward,
         success_rate=success_rate,
         mean_key_visible_time=mean_key_visible_time,
+        std_key_visible_time=std_key_visible_time,
         mean_door_visible_time=mean_door_visible_time,
+        std_door_visible_time=std_door_visible_time,
         key_never_visible=key_never_visible,
         key_visible_at_start=key_visible_at_start,
         door_never_visible=door_never_visible,

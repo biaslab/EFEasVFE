@@ -1,4 +1,5 @@
 using Plots
+using PGFPlotsX
 using LinearAlgebra
 using Colors
 
@@ -42,20 +43,19 @@ function plot_belief_grid(belief_vector, grid_size; title="Belief Grid", kwargs.
 end
 
 """
-    plot_inference_results(inference_result, grid_size; save_path=nothing)
+    build_minigrid_inference_plot(inference_result, grid_size)
 
-Create a comprehensive visualization of inference results.
+Internal function to build the components of a Minigrid inference results plot.
 
 # Arguments
 - `inference_result`: Result from inference containing posteriors and free energy
 - `grid_size`: Size of the environment grid
-- `save_path`: Optional path to save the plots
 
 # Returns
-- A Plots.jl plot object
+- A tuple containing (p1, p2, p3, p4, layout) for the four subplots and layout
 """
-function plot_inference_results(inference_result, grid_size; save_path=nothing)
-    # Change to the same 2×2 layout used in belief_evolution
+function build_minigrid_inference_plot(inference_result, grid_size)
+    # Define the layout
     layout = @layout [
         grid(1, 2)  # Top row: Free energy and location belief
         grid(1, 2)  # Bottom row: Orientation and key/door state
@@ -64,8 +64,8 @@ function plot_inference_results(inference_result, grid_size; save_path=nothing)
     # 1. Free Energy Plot
     p1 = Plots.plot(inference_result.free_energy,
         xlabel="Iteration",
-        ylabel="Free Energy",
-        title="Free Energy Progression",
+        ylabel="Bethe Free Energy",
+        title="Bethe Free Energy Progression",
         legend=false,
         linewidth=2)
 
@@ -89,17 +89,37 @@ function plot_inference_results(inference_result, grid_size; save_path=nothing)
         legend=false,
         ylim=(0, 1))
 
-    # Combine plots using the same approach as belief_evolution
-    final_plot = Plots.plot(p1, p2, p3, p4,
-        layout=layout,
-        size=(1000, 800))
+    return (p1, p2, p3, p4, layout)
+end
 
-    # Save if path provided
-    if !isnothing(save_path)
-        savefig(final_plot, save_path)
-    end
+"""
+    plot_inference_results_minigrid(inference_result, grid_size; save_path=nothing)
 
-    return final_plot
+Create a comprehensive visualization of Minigrid inference results.
+
+# Arguments
+- `inference_result`: Result from inference containing posteriors and free energy
+- `grid_size`: Size of the environment grid
+- `save_path`: Path to save the plots (without extension, will save both .png and .tikz)
+
+# Returns
+- A Plots.jl plot object
+"""
+function plot_inference_results_minigrid(inference_result, grid_size; save_path)
+    # Save TikZ version
+    pgfplotsx()
+    p1, p2, p3, p4, layout = build_minigrid_inference_plot(inference_result, grid_size)
+    tikz_plot = Plots.plot(p1, p2, p3, p4, layout=layout, size=(1000, 800))
+    savefig(tikz_plot, save_path * ".tikz")
+
+    # Save PNG version
+    gr()
+    p1, p2, p3, p4, layout = build_minigrid_inference_plot(inference_result, grid_size)
+    gr_plot = Plots.plot(p1, p2, p3, p4, layout=layout, size=(1000, 800))
+    savefig(gr_plot, save_path * ".png")
+
+    # Return the GR version for display
+    return gr_plot
 end
 
 """

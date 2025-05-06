@@ -241,7 +241,9 @@ function save_results(config::ExperimentConfig, kl_stats::NamedTuple, efe_stats:
         "std_reward" => kl_stats.std_reward,
         "success_rate" => kl_stats.success_rate,
         "mean_key_visible_time" => kl_stats.mean_key_visible_time,
+        "std_key_visible_time" => kl_stats.std_key_visible_time,
         "mean_door_visible_time" => kl_stats.mean_door_visible_time,
+        "std_door_visible_time" => kl_stats.std_door_visible_time,
         "key_never_visible" => kl_stats.key_never_visible,
         "key_visible_at_start" => kl_stats.key_visible_at_start,
         "door_never_visible" => kl_stats.door_never_visible,
@@ -255,7 +257,9 @@ function save_results(config::ExperimentConfig, kl_stats::NamedTuple, efe_stats:
         "std_reward" => efe_stats.std_reward,
         "success_rate" => efe_stats.success_rate,
         "mean_key_visible_time" => efe_stats.mean_key_visible_time,
+        "std_key_visible_time" => efe_stats.std_key_visible_time,
         "mean_door_visible_time" => efe_stats.mean_door_visible_time,
+        "std_door_visible_time" => efe_stats.std_door_visible_time,
         "key_never_visible" => efe_stats.key_never_visible,
         "key_visible_at_start" => efe_stats.key_visible_at_start,
         "door_never_visible" => efe_stats.door_never_visible,
@@ -290,8 +294,8 @@ function save_results(config::ExperimentConfig, kl_stats::NamedTuple, efe_stats:
     - Mean Reward: $(round(kl_stats.mean_reward, digits=3))
     - Standard Deviation: $(round(kl_stats.std_reward, digits=3))
     - Success Rate: $(round(kl_stats.success_rate * 100, digits=1))%
-    - Mean Key Visible Time: $(kl_stats.mean_key_visible_time == -1.0 ? "N/A" : round(kl_stats.mean_key_visible_time, digits=2))
-    - Mean Door Visible Time: $(kl_stats.mean_door_visible_time == -1.0 ? "N/A" : round(kl_stats.mean_door_visible_time, digits=2))
+    - Mean Key Visible Time: $(kl_stats.mean_key_visible_time == -1.0 ? "N/A" : round(kl_stats.mean_key_visible_time, digits=2)) $(kl_stats.std_key_visible_time == -1.0 ? "" : "±$(round(kl_stats.std_key_visible_time, digits=2))")
+    - Mean Door Visible Time: $(kl_stats.mean_door_visible_time == -1.0 ? "N/A" : round(kl_stats.mean_door_visible_time, digits=2)) $(kl_stats.std_door_visible_time == -1.0 ? "" : "±$(round(kl_stats.std_door_visible_time, digits=2))")
     - Key Never Visible: $(kl_stats.key_never_visible) episodes ($(round(kl_stats.key_never_visible / config.n_episodes * 100, digits=1))%)
     - Key Visible at Start: $(kl_stats.key_visible_at_start) episodes ($(round(kl_stats.key_visible_at_start / config.n_episodes * 100, digits=1))%)
     - Door Never Visible: $(kl_stats.door_never_visible) episodes ($(round(kl_stats.door_never_visible / config.n_episodes * 100, digits=1))%)
@@ -301,8 +305,8 @@ function save_results(config::ExperimentConfig, kl_stats::NamedTuple, efe_stats:
     - Mean Reward: $(round(efe_stats.mean_reward, digits=3))
     - Standard Deviation: $(round(efe_stats.std_reward, digits=3))
     - Success Rate: $(round(efe_stats.success_rate * 100, digits=1))%
-    - Mean Key Visible Time: $(efe_stats.mean_key_visible_time == -1.0 ? "N/A" : round(efe_stats.mean_key_visible_time, digits=2))
-    - Mean Door Visible Time: $(efe_stats.mean_door_visible_time == -1.0 ? "N/A" : round(efe_stats.mean_door_visible_time, digits=2))
+    - Mean Key Visible Time: $(efe_stats.mean_key_visible_time == -1.0 ? "N/A" : round(efe_stats.mean_key_visible_time, digits=2)) $(efe_stats.std_key_visible_time == -1.0 ? "" : "±$(round(efe_stats.std_key_visible_time, digits=2))")
+    - Mean Door Visible Time: $(efe_stats.mean_door_visible_time == -1.0 ? "N/A" : round(efe_stats.mean_door_visible_time, digits=2)) $(efe_stats.std_door_visible_time == -1.0 ? "" : "±$(round(efe_stats.std_door_visible_time, digits=2))")
     - Key Never Visible: $(efe_stats.key_never_visible) episodes ($(round(efe_stats.key_never_visible / config.n_episodes * 100, digits=1))%)
     - Key Visible at Start: $(efe_stats.key_visible_at_start) episodes ($(round(efe_stats.key_visible_at_start / config.n_episodes * 100, digits=1))%)
     - Door Never Visible: $(efe_stats.door_never_visible) episodes ($(round(efe_stats.door_never_visible / config.n_episodes * 100, digits=1))%)

@@ -17,10 +17,12 @@ using Colors
 import Colors: N0f8
 using EFEasVFE
 using Plots
+pgfplotsx()
 
 import EFEasVFE: create_environment, execute_initial_action, step_environment, initialize_beliefs_minigrid, convert_frame, execute_step
 import EFEasVFE: efe_minigrid_agent, efe_minigrid_agent_constraints, efe_minigrid_agent_initialization
 import EFEasVFE: klcontrol_minigrid_agent, klcontrol_minigrid_agent_constraints, klcontrol_minigrid_agent_initialization
+import EFEasVFE: plot_inference_results_minigrid
 
 function parse_command_line()
     s = ArgParseSettings()
@@ -240,10 +242,10 @@ function main()
 
     # Plot and save inference results
     @info "Plotting inference results..."
-    plot_inference_results(
+    plot_inference_results_minigrid(
         inference_result,
         config.grid_size,
-        save_path=joinpath(results_dir, "inference_results.png")
+        save_path=joinpath(results_dir, "inference_results")
     )
 
     # Create and save animation if requested

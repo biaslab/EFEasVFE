@@ -46,6 +46,11 @@ Run the experiment:
 julia scripts/stochastic_maze.jl
 ```
 
+Debug the stochastic maze environment:
+```julia
+julia scripts/debug_stochastic_maze.jl --save-frame --iterations 50
+```
+
 ### 2. MiniGrid DoorKey
 
 A door-key environment where the agent must:
@@ -70,6 +75,54 @@ uvicorn minigrid_environment:app --reload
 2. In a separate terminal, run the Julia experiment:
 ```julia
 julia scripts/minigrid.jl
+```
+
+Debug the minigrid environment:
+```julia
+julia scripts/debug_minigrid.jl --grid-size 4 --time-horizon 25 --save-frame --iterations 40 --save-animation
+```
+
+### Running Experiments with Make
+
+For convenience, a Makefile is provided to run all experiments:
+
+```bash
+# Run all experiments
+make all
+
+# Run specific experiments
+make minigrid
+make debug_minigrid
+make stochastic_maze
+make debug_stochastic_maze
+
+# Start the Minigrid API server
+make start_api
+
+# Clean generated files
+make clean
+
+# Show help
+make help
+```
+
+The Makefile automatically detects the number of available CPU cores and configures Julia to use an appropriate number of threads.
+
+### Visualization
+
+Both environments include comprehensive visualization tools:
+
+- **Belief visualization**: Visualize agent beliefs about states, actions, and free energy
+- **Animation**: Create animations of belief evolution over time
+- **TikZ export**: Save plots in both PNG and TikZ formats for publication-quality figures
+
+Example visualization options:
+```julia
+# For Minigrid
+julia scripts/debug_minigrid.jl --save-animation
+
+# For Stochastic Maze
+julia scripts/debug_stochastic_maze.jl --save-frame
 ```
 
 ## Python Setup

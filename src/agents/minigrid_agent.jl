@@ -10,7 +10,7 @@ using VideoIO
 using Colors  # Add Colors.jl for RGB{N0f8} support
 using FileIO  # Add FileIO for saving individual frames
 
-export MinigridConfig, run_minigrid_agent, create_observation_tensor, convert_action, save_minigrid_frame
+export MinigridConfig, run_minigrid_agent, create_observation_tensor, convert_action, save_minigrid_frame, MinigridEpisodeStats
 
 Base.@kwdef struct MinigridConfig{T<:AbstractFloat}
     grid_size::Int
@@ -24,6 +24,32 @@ Base.@kwdef struct MinigridConfig{T<:AbstractFloat}
     record_episode::Bool = false  # Default to false
     experiment_name::String
     parallel::Bool = false  # Default to sequential execution
+end
+
+"""
+    MinigridEpisodeStats
+
+Statistics collected during a Minigrid episode.
+
+# Fields
+- `reward::Float64`: Total reward collected during the episode
+- `first_key_visible::Int`: Time step when the key was first visible (T+1 if never visible, 0 if visible at start)
+- `first_door_visible::Int`: Time step when the door was first visible (T+1 if never visible, 0 if visible at start)
+- `key_collected::Int`: Time step when the key was collected (T+1 if never collected)
+- `door_opened::Int`: Time step when the door was opened (T+1 if never opened)
+- `goal_reached::Bool`: Whether the goal was reached
+- `path_length::Int`: Number of steps taken in the episode
+- `time_horizon::Int`: The maximum time horizon for this episode
+"""
+Base.@kwdef mutable struct MinigridEpisodeStats
+    reward::Float64 = 0.0
+    first_key_visible::Int = -1  # Will be set to T+1 if never visible
+    first_door_visible::Int = -1  # Will be set to T+1 if never visible
+    key_collected::Int = -1  # Will be set to T+1 if never collected
+    door_opened::Int = -1   # Will be set to T+1 if never opened
+    goal_reached::Bool = false
+    path_length::Int = 0
+    time_horizon::Int = 0
 end
 
 Base.@kwdef mutable struct MinigridBeliefs{T<:AbstractFloat}
@@ -304,6 +330,114 @@ function save_minigrid_frame(frame::Array{UInt8,3}, model_name::String, seed, ti
 end
 
 """
+    update_stats!(stats::MinigridEpisodeStats, env_state, timestep::Int)
+
+Update episode statistics based on the current environment state.
+
+# Arguments
+- `stats::MinigridEpisodeStats`: Statistics to update
+- `env_state`: Current environment state
+- `timestep::Int`: Current timestep in the episode
+"""
+function update_stats!(stats::MinigridEpisodeStats, env_state, timestep::Int)
+    # Update reward
+    stats.reward += env_state["reward"]
+
+    # Check if goal reached
+    if env_state["terminated"] && env_state["reward"] > 0
+        stats.goal_reached = true
+    end
+
+    # Update path length
+    stats.path_length = timestep
+
+    # Check for key visibility
+    if stats.first_key_visible == -1 && contains_key(env_state["observation"]["image"])
+        stats.first_key_visible = timestep
+    end
+
+    # Check for door visibility
+    if stats.first_door_visible == -1 && contains_door(env_state["observation"]["image"])
+        stats.first_door_visible = timestep
+    end
+
+    # Check key collection and door opening by monitoring key_door_state changes
+    # This depends on your specific environment implementation
+    # For now, we'll use the reward and state information as a proxy
+
+    # Usually a non-zero reward means we've reached the goal
+    # But this is environment-specific and may need adjustment
+    if env_state["terminated"] && env_state["reward"] > 0
+        # If we haven't recorded door opening and we're done with success
+        if stats.door_opened == -1
+            stats.door_opened = timestep
+        end
+    end
+
+    # Detecting key collection requires knowing your environment's
+    # specific state representation, we'll need a better method
+    # in the future.
+end
+
+"""
+    contains_key(image_array)
+
+Check if the observation image contains a key (value 5).
+"""
+function contains_key(image_array)
+    for row in image_array
+        for cell in row
+            if cell[1] == 5
+                return true
+            end
+        end
+    end
+    return false
+end
+
+"""
+    contains_door(image_array)
+
+Check if the observation image contains a door (value 4).
+"""
+function contains_door(image_array)
+    for row in image_array
+        for cell in row
+            if cell[1] == 4
+                return true
+            end
+        end
+    end
+    return false
+end
+
+"""
+    finalize_stats!(stats::MinigridEpisodeStats)
+
+Set any unobserved events to T+1 to indicate they never occurred.
+"""
+function finalize_stats!(stats::MinigridEpisodeStats)
+    T = stats.time_horizon
+
+    # If events were never observed, set them to T+1
+    if stats.first_key_visible == -1
+        stats.first_key_visible = T + 1
+    end
+
+    if stats.first_door_visible == -1
+        stats.first_door_visible = T + 1
+    end
+
+    if stats.key_collected == -1
+        stats.key_collected = T + 1
+    end
+
+    if stats.door_opened == -1
+        stats.door_opened = T + 1
+    end
+end
+
+"""
     run_single_episode(model, tensors, config, goal, callbacks, seed; 
                         constraints_fn=klcontrol_minigrid_agent_constraints,
                         initialization_fn=klcontrol_minigrid_agent_initialization,
@@ -325,7 +459,7 @@ Run a single episode of the minigrid environment.
 - `inference_kwargs...`: Additional keyword arguments to pass to the inference process
 
 # Returns
-- The total reward for the episode
+- A MinigridEpisodeStats object with statistics for the episode
 """
 function run_single_episode(model, tensors, config, goal, callbacks, seed;
     constraints_fn=klcontrol_minigrid_agent_constraints,
@@ -340,6 +474,9 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
     end
     env_response = create_environment(config.grid_size + 2, render_mode=render_mode, seed=seed)
     session_id = env_response["session_id"]
+
+    # Initialize episode statistics
+    stats = MinigridEpisodeStats(time_horizon=config.time_horizon)
 
     try
         # Initialize frames collection if recording
@@ -361,10 +498,12 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
         end
 
         beliefs = initialize_beliefs_minigrid(config.grid_size, config.number_type)
-        reward = 0
         env_state = execute_initial_action(config.grid_size, session_id)
         action = 1
         previous_result = nothing
+
+        # Update statistics for initial state
+        update_stats!(stats, env_state, 0)
 
         # Store initial frame if recording
         if record
@@ -378,6 +517,8 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
         end
 
         for t in config.time_horizon:-1:1
+            current_timestep = config.time_horizon - t + 1
+
             action, env_state, result = execute_step(
                 env_state, action, beliefs, model, tensors, config, goal,
                 callbacks, t, previous_result, session_id;
@@ -385,7 +526,10 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
                 initialization_fn=initialization_fn,
                 inference_kwargs...  # Forward any additional inference arguments
             )
-            reward += env_state["reward"]
+
+            # Update statistics with new state
+            update_stats!(stats, env_state, current_timestep)
+
             previous_result = result
 
             if record
@@ -394,7 +538,6 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
 
                 # Save individual frame as PNG
                 if !isnothing(frames_dir)
-                    current_timestep = config.time_horizon - t + 1
                     save_minigrid_frame(current_frame, model_name, seed, current_timestep, frames_dir)
                 end
             end
@@ -409,7 +552,10 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
             record_episode_to_video(frames, video_path)
         end
 
-        return reward
+        # Finalize stats - set unobserved events to T+1
+        finalize_stats!(stats)
+
+        return stats
     finally
         # Always clean up the environment session
         try
@@ -442,7 +588,7 @@ Run a minigrid agent experiment with the given model and configuration.
 - `inference_kwargs...`: Additional keyword arguments to pass to the inference process
 
 # Returns
-- Tuple of (mean_reward, std_reward)
+- Named tuple with aggregate statistics and all individual episode statistics
 
 # Throws
 - `EnvironmentError` if environment communication fails
@@ -459,7 +605,7 @@ function run_minigrid_agent(
     inference_kwargs...  # Additional inference kwargs to pass through
 )
     validate_config(config)
-    rewards = zeros(config.n_episodes)
+    all_stats = Vector{MinigridEpisodeStats}(undef, config.n_episodes)
 
     # Determine if we should use parallel execution
     # If parallel keyword is provided, it overrides the config setting
@@ -505,7 +651,7 @@ function run_minigrid_agent(
                 )
             end
 
-            rewards[i] = run_single_episode(
+            all_stats[i] = run_single_episode(
                 model, tensors, local_config, goal, callbacks, episode_seed;
                 constraints_fn=constraints_fn,
                 initialization_fn=initialization_fn,
@@ -525,7 +671,7 @@ function run_minigrid_agent(
             episode_seed = episode_seeds[i]
             # Record only the last episode if record_episode is true
             should_record = config.record_episode && i == config.n_episodes
-            rewards[i] = run_single_episode(
+            all_stats[i] = run_single_episode(
                 model, tensors, config, goal, callbacks, episode_seed;
                 constraints_fn=constraints_fn,
                 initialization_fn=initialization_fn,
@@ -535,5 +681,42 @@ function run_minigrid_agent(
         end
     end
 
-    return mean(rewards), std(rewards)
+    # Calculate aggregate statistics
+    rewards = [stats.reward for stats in all_stats]
+    mean_reward = mean(rewards)
+    std_reward = std(rewards)
+
+    # Calculate success rate
+    success_rate = mean([stats.goal_reached for stats in all_stats])
+
+    # Calculate mean first observation times for key and door
+    # Filter out T+1 (never visible) and 0 (visible from start)
+    valid_key_times = [stats.first_key_visible for stats in all_stats
+                       if stats.first_key_visible > 0]
+    valid_door_times = [stats.first_door_visible for stats in all_stats
+                        if stats.first_door_visible > 0]
+
+    # Count visibility stats
+    key_never_visible = count(stats -> stats.first_key_visible > stats.time_horizon, all_stats)
+    key_visible_at_start = count(stats -> stats.first_key_visible == 0, all_stats)
+    door_never_visible = count(stats -> stats.first_door_visible > stats.time_horizon, all_stats)
+    door_visible_at_start = count(stats -> stats.first_door_visible == 0, all_stats)
+
+    # Calculate means only for valid times
+    mean_key_visible_time = isempty(valid_key_times) ? -1.0 : mean(valid_key_times)
+    mean_door_visible_time = isempty(valid_door_times) ? -1.0 : mean(valid_door_times)
+
+    # Return both aggregate statistics and all individual episode statistics
+    return (
+        mean_reward=mean_reward,
+        std_reward=std_reward,
+        success_rate=success_rate,
+        mean_key_visible_time=mean_key_visible_time,
+        mean_door_visible_time=mean_door_visible_time,
+        key_never_visible=key_never_visible,
+        key_visible_at_start=key_visible_at_start,
+        door_never_visible=door_never_visible,
+        door_visible_at_start=door_visible_at_start,
+        episode_stats=all_stats
+    )
 end

@@ -178,7 +178,7 @@ function run_experiment(config::ExperimentConfig)
 
     # Run KL control agent
     @info "Running KL control agent"
-    m_kl, s_kl = run_minigrid_agent(
+    kl_stats = run_minigrid_agent(
         klcontrol_minigrid_agent,
         tensors,
         agent_config,
@@ -187,7 +187,7 @@ function run_experiment(config::ExperimentConfig)
     )
 
     @info "Running EFE agent"
-    m_efe, s_efe = run_minigrid_agent(
+    efe_stats = run_minigrid_agent(
         efe_minigrid_agent,
         tensors,
         agent_config,
@@ -199,38 +199,68 @@ function run_experiment(config::ExperimentConfig)
             limit_stack_depth=500), # Force marginal computation
     )
 
-    @info "Experiment completed" mean_reward_kl = m_kl std_reward_kl = s_kl mean_reward_efe = m_efe std_reward_efe = s_efe
+    # Log detailed statistics
+    @info "KL Control agent results" mean_reward = kl_stats.mean_reward std_reward = kl_stats.std_reward success_rate = kl_stats.success_rate mean_key_visible_time = kl_stats.mean_key_visible_time mean_door_visible_time = kl_stats.mean_door_visible_time key_never_visible = kl_stats.key_never_visible key_visible_at_start = kl_stats.key_visible_at_start door_never_visible = kl_stats.door_never_visible door_visible_at_start = kl_stats.door_visible_at_start
+
+    @info "EFE agent results" mean_reward = efe_stats.mean_reward std_reward = efe_stats.std_reward success_rate = efe_stats.success_rate mean_key_visible_time = efe_stats.mean_key_visible_time mean_door_visible_time = efe_stats.mean_door_visible_time key_never_visible = efe_stats.key_never_visible key_visible_at_start = efe_stats.key_visible_at_start door_never_visible = efe_stats.door_never_visible door_visible_at_start = efe_stats.door_visible_at_start
+
+    @info "Experiment completed"
 
     # Save results if requested
     if config.save_results
-        save_results(config, m_kl, s_kl, m_efe, s_efe)
+        save_results(config, kl_stats, efe_stats)
     end
 
-    return m_kl, s_kl, m_efe, s_efe
+    return kl_stats, efe_stats
 end
 
 """
-    save_results(config::ExperimentConfig, mean_reward::Float64, std_reward::Float64)
+    save_results(config::ExperimentConfig, kl_stats::NamedTuple, efe_stats::NamedTuple)
 
 Save experiment results to disk.
 """
-function save_results(config::ExperimentConfig, mean_reward_kl::Float64, std_reward_kl::Float64, mean_reward_efe::Float64, std_reward_efe::Float64)
+function save_results(config::ExperimentConfig, kl_stats::NamedTuple, efe_stats::NamedTuple)
     timestamp = Dates.format(now(), "yyyy-mm-dd_HH-MM-SS")
+
+    # Create base result dictionary with experiment configuration
     results = Dict(
         "timestamp" => timestamp,
         "grid_size" => config.grid_size,
         "time_horizon" => config.time_horizon,
         "n_episodes" => config.n_episodes,
         "n_iterations" => config.n_iterations,
-        "mean_reward_kl" => mean_reward_kl,
-        "std_reward_kl" => std_reward_kl,
-        "mean_reward_efe" => mean_reward_efe,
-        "std_reward_efe" => std_reward_efe,
         "seed" => config.seed,
         "experiment_name" => config.experiment_name,
-        "model source" => GraphPPL.getsource(klcontrol_minigrid_agent()),
         "parallel" => config.parallel,
         "thread_count" => config.parallel ? Threads.nthreads() : 1
+    )
+
+    # Add KL control results
+    results["kl_control"] = Dict(
+        "mean_reward" => kl_stats.mean_reward,
+        "std_reward" => kl_stats.std_reward,
+        "success_rate" => kl_stats.success_rate,
+        "mean_key_visible_time" => kl_stats.mean_key_visible_time,
+        "mean_door_visible_time" => kl_stats.mean_door_visible_time,
+        "key_never_visible" => kl_stats.key_never_visible,
+        "key_visible_at_start" => kl_stats.key_visible_at_start,
+        "door_never_visible" => kl_stats.door_never_visible,
+        "door_visible_at_start" => kl_stats.door_visible_at_start,
+        "model_source" => GraphPPL.getsource(klcontrol_minigrid_agent())
+    )
+
+    # Add EFE results
+    results["efe"] = Dict(
+        "mean_reward" => efe_stats.mean_reward,
+        "std_reward" => efe_stats.std_reward,
+        "success_rate" => efe_stats.success_rate,
+        "mean_key_visible_time" => efe_stats.mean_key_visible_time,
+        "mean_door_visible_time" => efe_stats.mean_door_visible_time,
+        "key_never_visible" => efe_stats.key_never_visible,
+        "key_visible_at_start" => efe_stats.key_visible_at_start,
+        "door_never_visible" => efe_stats.door_never_visible,
+        "door_visible_at_start" => efe_stats.door_visible_at_start,
+        "model_source" => GraphPPL.getsource(efe_minigrid_agent())
     )
 
     # Save results in multiple formats
@@ -255,17 +285,40 @@ function save_results(config::ExperimentConfig, mean_reward_kl::Float64, std_rew
     - Experiment Name: $(config.experiment_name)
     - Parallel Execution: $(config.parallel)
     $(config.parallel ? "- Thread Count: $(Threads.nthreads())" : "")
-    ## Results
-    - Mean Reward KL: $(round(mean_reward_kl, digits=3))
-    - Standard Deviation KL: $(round(std_reward_kl, digits=3))
-    - Mean Reward EFE: $(round(mean_reward_efe, digits=3))
-    - Standard Deviation EFE: $(round(std_reward_efe, digits=3))
+
+    ## KL Control Results
+    - Mean Reward: $(round(kl_stats.mean_reward, digits=3))
+    - Standard Deviation: $(round(kl_stats.std_reward, digits=3))
+    - Success Rate: $(round(kl_stats.success_rate * 100, digits=1))%
+    - Mean Key Visible Time: $(kl_stats.mean_key_visible_time == -1.0 ? "N/A" : round(kl_stats.mean_key_visible_time, digits=2))
+    - Mean Door Visible Time: $(kl_stats.mean_door_visible_time == -1.0 ? "N/A" : round(kl_stats.mean_door_visible_time, digits=2))
+    - Key Never Visible: $(kl_stats.key_never_visible) episodes ($(round(kl_stats.key_never_visible / config.n_episodes * 100, digits=1))%)
+    - Key Visible at Start: $(kl_stats.key_visible_at_start) episodes ($(round(kl_stats.key_visible_at_start / config.n_episodes * 100, digits=1))%)
+    - Door Never Visible: $(kl_stats.door_never_visible) episodes ($(round(kl_stats.door_never_visible / config.n_episodes * 100, digits=1))%)
+    - Door Visible at Start: $(kl_stats.door_visible_at_start) episodes ($(round(kl_stats.door_visible_at_start / config.n_episodes * 100, digits=1))%)
+
+    ## EFE Results
+    - Mean Reward: $(round(efe_stats.mean_reward, digits=3))
+    - Standard Deviation: $(round(efe_stats.std_reward, digits=3))
+    - Success Rate: $(round(efe_stats.success_rate * 100, digits=1))%
+    - Mean Key Visible Time: $(efe_stats.mean_key_visible_time == -1.0 ? "N/A" : round(efe_stats.mean_key_visible_time, digits=2))
+    - Mean Door Visible Time: $(efe_stats.mean_door_visible_time == -1.0 ? "N/A" : round(efe_stats.mean_door_visible_time, digits=2))
+    - Key Never Visible: $(efe_stats.key_never_visible) episodes ($(round(efe_stats.key_never_visible / config.n_episodes * 100, digits=1))%)
+    - Key Visible at Start: $(efe_stats.key_visible_at_start) episodes ($(round(efe_stats.key_visible_at_start / config.n_episodes * 100, digits=1))%)
+    - Door Never Visible: $(efe_stats.door_never_visible) episodes ($(round(efe_stats.door_never_visible / config.n_episodes * 100, digits=1))%)
+    - Door Visible at Start: $(efe_stats.door_visible_at_start) episodes ($(round(efe_stats.door_visible_at_start / config.n_episodes * 100, digits=1))%)
 
     ## Timestamp
     Experiment conducted at: $timestamp
-    Model source: 
+
+    ## KL Control Model
     ```
-    $(results["model source"])
+    $(results["kl_control"]["model_source"])
+    ```
+
+    ## EFE Model
+    ```
+    $(results["efe"]["model_source"])
     ```
     """
 
@@ -409,8 +462,9 @@ function main()
     )
 
     # Run experiment
-    mean_reward, std_reward = run_experiment(config)
+    kl_stats, efe_stats = run_experiment(config)
 
+    return kl_stats, efe_stats
 end
 
 # Run main function if script is run directly

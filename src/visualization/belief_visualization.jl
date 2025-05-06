@@ -3,7 +3,8 @@ using PGFPlotsX
 using LinearAlgebra
 using Colors
 
-export plot_belief_grid, plot_inference_results, animate_belief_evolution, animate_trajectory_belief
+export plot_belief_grid, plot_inference_results, plot_inference_results_minigrid, animate_belief_evolution, animate_trajectory_belief
+export plot_inference_results_stochastic_maze, build_stochastic_maze_inference_plot
 
 """
     plot_belief_grid(belief_vector, grid_size; kwargs...)
@@ -256,4 +257,67 @@ function animate_trajectory_belief(inference_result, grid_size; fps=2, save_path
     end
 
     return anim
+end
+
+"""
+    build_stochastic_maze_inference_plot(inference_result, env)
+
+Internal function to build the components of a StochasticMaze inference results plot.
+
+# Arguments
+- `inference_result`: Result from inference containing posteriors and free energy
+- `env`: The stochastic maze environment
+
+# Returns
+- A tuple containing (p1, p2, p3, layout) for all subplots and layout
+"""
+function build_stochastic_maze_inference_plot(inference_result, env)
+    # Define the layout
+    layout = @layout [
+        grid(1, 2)  # Both plots side by side
+    ]
+
+    # 1. Environment visualization showing starting position
+    p1 = visualize_stochastic_maze(env)
+    title!(p1, "Initial State")
+
+    # 2. Free Energy Plot
+    p2 = Plots.plot(inference_result.free_energy,
+        xlabel="Iteration",
+        ylabel="Bethe Free Energy",
+        title="Bethe Free Energy Progression",
+        legend=false,
+        linewidth=2)
+
+    return (p1, p2, layout)
+end
+
+"""
+    plot_inference_results_stochastic_maze(inference_result, env; save_path)
+
+Create a comprehensive visualization of StochasticMaze inference results.
+
+# Arguments
+- `inference_result`: Result from inference containing posteriors and free energy
+- `env`: The stochastic maze environment
+- `save_path`: Path to save the plots (without extension, will save both .png and .tikz)
+
+# Returns
+- A Plots.jl plot object
+"""
+function plot_inference_results_stochastic_maze(inference_result, env; save_path)
+    # Save TikZ version
+    pgfplotsx()
+    p1, p2, layout = build_stochastic_maze_inference_plot(inference_result, env)
+    tikz_plot = Plots.plot(p1, p2, layout=layout, size=(1200, 600))
+    savefig(tikz_plot, save_path * ".tikz")
+
+    # Save PNG version
+    gr()
+    p1, p2, layout = build_stochastic_maze_inference_plot(inference_result, env)
+    gr_plot = Plots.plot(p1, p2, layout=layout, size=(1200, 600))
+    savefig(gr_plot, save_path * ".png")
+
+    # Return the GR version for display
+    return gr_plot
 end

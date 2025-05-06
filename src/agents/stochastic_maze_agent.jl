@@ -115,7 +115,7 @@ function execute_step(env, observation, beliefs, model, tensors, config, goal, c
     observation_vec[observation] = one(Float64)
 
     # Run inference
-    result = infer(
+    result = infer(;
         model=model(
             A=tensors.observation_matrix,
             B=tensors.transition_tensor,

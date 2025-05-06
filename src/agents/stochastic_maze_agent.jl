@@ -303,6 +303,7 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
             if debug_mode
                 @debug "Episode $(seed): Negative reward at t=$(t)!"
             end
+            break
         end
 
         # Delay for visualization

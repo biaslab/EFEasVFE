@@ -4,7 +4,6 @@ using Tullio
 import RxInfer: Categorical
 
 
-# Define the model and constraints for the maze RxEnvironmentsZoo
 @model function klcontrol_minigrid_agent(p_old_location, p_old_orientation, p_key_location, p_door_location,
     p_old_key_door_state, location_transition_tensor, orientation_transition_tensor, key_door_transition_tensor,
     observation_tensors, T, goal, observations, action, orientation_observation, number_type)

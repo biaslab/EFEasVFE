@@ -218,8 +218,9 @@ function run_stochastic_maze_experiment(;
     end
     # Calculate KL-Control statistics
     kl_mean = mean(kl_rewards)
+    kl_success_rate = sum(kl_rewards .>= 1.0) / config.n_episodes
     kl_std = std(kl_rewards)
-    log_info("KL-Control agent results: mean reward = $kl_mean, std = $kl_std")
+    log_info("KL-Control agent results: mean reward = $kl_mean, std = $kl_std, success rate = $kl_success_rate")
 
     # Initialize storage for episodic data
     log_info("Running experiments with EFE agent...")
@@ -255,7 +256,8 @@ function run_stochastic_maze_experiment(;
     # Calculate EFE statistics
     efe_mean = mean(efe_rewards)
     efe_std = std(efe_rewards)
-    log_info("EFE agent results: mean reward = $efe_mean, std = $efe_std")
+    efe_success_rate = sum(efe_rewards .>= 1.0) / config.n_episodes
+    log_info("EFE agent results: mean reward = $efe_mean, std = $efe_std, success rate = $efe_success_rate")
 
     # Record results
     experiment_metrics["models"]["efe"] = Dict(

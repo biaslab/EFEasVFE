@@ -84,15 +84,19 @@ case "$1" in
     stochastic_maze)
         run_julia_script "stochastic_maze" "$2" "$3"
         ;;
+    debug_stochastic_maze)
+        run_julia_script "debug_stochastic_maze" "$2" "$3"
+        ;;
     all)
         # Run all experiments
         start_api_server
         run_julia_script "minigrid" "$2" "${3:-"--save-results --parallel --save-video --n-iterations 40 --n-episodes 200 --time-horizon 25 --grid-size 4"}"
         run_julia_script "debug_minigrid" "$2" "${4:-"--grid-size 4 --time-horizon 25 --save-frame --iterations 40 --save-animation"}"
         run_julia_script "stochastic_maze" "$2" "${5:-"-r --save-results"}"
+        run_julia_script "debug_stochastic_maze" "$2" "${6:-"--save-frame --iterations 50"}"
         ;;
     *)
-        echo "Usage: $0 {start_api|stop_api|minigrid|debug_minigrid|stochastic_maze|all} [threads] [parameters]"
+        echo "Usage: $0 {start_api|stop_api|minigrid|debug_minigrid|stochastic_maze|debug_stochastic_maze|all} [threads] [parameters]"
         exit 1
         ;;
 esac

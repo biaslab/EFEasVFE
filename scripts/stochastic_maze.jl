@@ -35,9 +35,9 @@ function parse_command_line()
         arg_type = Int
         default = 100
         "--n-iterations", "-i"
-        help = "Number of iterations per step (default: 10)"
+        help = "Number of iterations per step (default: 40)"
         arg_type = Int
-        default = 10
+        default = 40
         "--wait-time", "-w"
         help = "Time to wait between steps in seconds (default: 0.0)"
         arg_type = Float64

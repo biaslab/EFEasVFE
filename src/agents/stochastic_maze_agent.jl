@@ -236,10 +236,31 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
     push!(episode_data["observations"], observation)
     push!(episode_data["timestamps"], 0)
 
+    # Choose appropriate backend for plotting
+    backend = use_tikz ? :pgfplotsx : :gr
+
+    # Define extra kwargs for tikz if needed
+    tikz_extra_kwargs = nothing
+    if use_tikz
+        # Define PGFPlotsX-specific options to improve appearance
+        tikz_extra_kwargs = Dict(
+            :plot => Dict(
+                :scale_only_axis => true,
+                :width => "\\textwidth",
+                :legend_style => Dict(
+                    :font => "\\footnotesize",
+                    :row_sep => "3pt",
+                    :legend_columns => 1
+                )
+            )
+        )
+    end
+
     # Save initial frame if requested
     if record
-        initial_plot = visualize_stochastic_maze(env; show_legend=show_legend)
-        save_frame(initial_plot, model_name, seed, 0, frames_dir; use_tikz=use_tikz)
+        initial_plot = visualize_stochastic_maze(env; show_legend=show_legend, backend=backend)
+        save_frame(initial_plot, model_name, seed, 0, frames_dir;
+            use_tikz=use_tikz, extra_kwargs=tikz_extra_kwargs)
     end
 
     # Log initial state if in debug mode
@@ -281,8 +302,9 @@ function run_stochastic_maze_single_episode(model, tensors, config, goal, callba
 
         # Save current frame if requested
         if record
-            current_plot = visualize_stochastic_maze(env; show_legend=show_legend)
-            save_frame(current_plot, model_name, seed, current_timestep, frames_dir; use_tikz=use_tikz)
+            current_plot = visualize_stochastic_maze(env; show_legend=show_legend, backend=backend)
+            save_frame(current_plot, model_name, seed, current_timestep, frames_dir;
+                use_tikz=use_tikz, extra_kwargs=tikz_extra_kwargs)
         end
 
         # Log step information if in debug mode

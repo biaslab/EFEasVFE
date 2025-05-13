@@ -482,25 +482,38 @@ function generate_goal_distributions(n_states::Int, goal_state::Int, T::Int)
 end
 
 """
-    visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
+    visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false, backend=nothing)
 
 Visualize the StochasticMaze environment using Plots.jl.
 
 # Arguments
 - `env::StochasticMaze`: The environment to visualize
 - `show_legend::Bool=false`: Whether to show the legend explaining the colors
+- `backend`: Optional specification of the backend (e.g., :gr or :pgfplotsx)
 
 # Returns
 - `Plots.Plot`: A plot of the maze
 """
-function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
+function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false, backend=nothing)
+    # Switch to specified backend if provided
+    if !isnothing(backend)
+        if backend == :pgfplotsx
+            pgfplotsx()
+        elseif backend == :gr
+            gr()
+        end
+    end
+
     # Get grid dimensions
     grid_size_x = env.grid_size_x
     grid_size_y = env.grid_size_y
 
+    # Different plot settings based on backend
+    current_backend = Plots.backend_name()
+
     # Create a new plot with appropriate size and aspect ratio
     p = plot(
-        size=show_legend ? (950, 700) : (600, 600),  # Square format when no legend
+        size=(600, 600),  # Always use square format
         aspect_ratio=:equal,
         xlim=(0, grid_size_x),
         ylim=(0, grid_size_y),
@@ -534,17 +547,17 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
     end
 
     # Plot sink states
+    has_sink = false
     for (x, y) in env.sink_states
         # Plot a filled rectangle for sink states
         x_coords = [x - 1, x, x, x - 1, x - 1]
         y_coords = [grid_size_y - y, grid_size_y - y, grid_size_y - y + 1, grid_size_y - y + 1, grid_size_y - y]
-        plot!(p, x_coords, y_coords, color=MAZE_THEME.sink, alpha=0.6, fill=true, label=nothing)
-    end
-
-    # Add a legend entry for sink states if showing legend
-    if show_legend
-        plot!(p, [], [], color=MAZE_THEME.sink, alpha=0.6, fill=true,
-            label="Sink state", linewidth=2, markerstrokewidth=2)
+        if show_legend && !has_sink
+            plot!(p, x_coords, y_coords, color=MAZE_THEME.sink, alpha=0.6, fill=true, label="Sink state")
+            has_sink = true
+        else
+            plot!(p, x_coords, y_coords, color=MAZE_THEME.sink, alpha=0.6, fill=true, label=nothing)
+        end
     end
 
     # Plot reward states
@@ -579,6 +592,7 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
         end
     end
 
+    has_noisy = false
     # Plot observation noise
     for s in 1:size(env.observation_matrix, 2)
         if env.observation_matrix[s, s] != 1.0
@@ -587,14 +601,13 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
             # Plot a filled rectangle for noisy states
             x_coords = [x - 1, x, x, x - 1, x - 1]
             y_coords = [grid_size_y - y, grid_size_y - y, grid_size_y - y + 1, grid_size_y - y + 1, grid_size_y - y]
-            plot!(p, x_coords, y_coords, color=MAZE_THEME.noisy, alpha=noise, fill=true, label=nothing)
+            if show_legend && !has_noisy
+                plot!(p, x_coords, y_coords, color=MAZE_THEME.noisy, alpha=noise, fill=true, label="Observation noise")
+                has_noisy = true
+            else
+                plot!(p, x_coords, y_coords, color=MAZE_THEME.noisy, alpha=noise, fill=true, label=nothing)
+            end
         end
-    end
-
-    # Add a legend entry for observation noise if showing legend
-    if show_legend
-        plot!(p, [], [], color=MAZE_THEME.noisy, alpha=0.6, fill=true,
-            label="Observation noise", linewidth=2, markerstrokewidth=2)
     end
 
     # Plot stochastic states (bridge effect)
@@ -631,11 +644,28 @@ function visualize_stochastic_maze(env::StochasticMaze; show_legend::Bool=false)
 
     # Configure legend if showing
     if show_legend
-        plot!(p, legend=:outerright, legendfontsize=18, legendtitle="Maze Elements",
-            legendtitlefontsize=20, legendtitlealign=:center,
-            margin=10Plots.mm, widen=true, foreground_color_legend=:black,
-            background_color_legend=:white, framestyle=:box,
-            legendmarkersize=18)
+        # Different legend settings based on backend
+        if Symbol(current_backend) == :pgfplotsx || Symbol(current_backend) == :pgfplots
+            # For PGFPlotsX - position legend to the right
+            plot!(p, legend=:outerright, legendfontsize=16, legendtitle="Maze Elements",
+                legendtitlefontsize=18, legendtitlealign=:center,
+                margin=10Plots.mm, widen=true, foreground_color_legend=:black,
+                background_color_legend=:white, framestyle=:box,
+                legendmarkersize=16,
+                legend_column_gap=10,  # Add gap between marker and text
+                legend_cell_align=:left,
+                legend_hfactor=1.2,    # Horizontal expansion factor
+                legend_vfactor=1.2,    # Vertical expansion factor  
+                legend_margin=8        # Margin around the entire legend
+            )
+        else
+            # For other backends like GR
+            plot!(p, legend=:outerright, legendfontsize=18, legendtitle="Maze Elements",
+                legendtitlefontsize=20, legendtitlealign=:center,
+                margin=10Plots.mm, widen=true, foreground_color_legend=:black,
+                background_color_legend=:white, framestyle=:box,
+                legendmarkersize=18)
+        end
     end
 
     return p

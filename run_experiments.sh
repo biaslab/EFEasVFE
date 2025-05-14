@@ -33,9 +33,9 @@ start_api_server() {
         fi
     fi
     
-    # Start API server
+    # Start API server with uv
     cd "$SCRIPT_DIR/src/environments"
-    nohup uvicorn minigrid_environment:app --reload > /tmp/minigrid_api.log 2>&1 &
+    nohup uv run -m uvicorn minigrid_environment:app --reload > /tmp/minigrid_api.log 2>&1 &
     PID=$!
     echo $PID > "$API_PROCESS_FILE"
     echo "API server started with PID $PID"

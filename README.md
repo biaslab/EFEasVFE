@@ -1,37 +1,18 @@
 # EFEasVFE
 
-This code base is using the [Julia Language](https://julialang.org/) and
-[DrWatson](https://juliadynamics.github.io/DrWatson.jl/stable/)
-to make a reproducible scientific project named
-> EFEasVFE
 
-It is authored by wouterwln.
 
-To (locally) reproduce this project, do the following:
+## Prerequisites
 
-0. Download this code base. Notice that raw data are typically not included in the
-   git-history and may need to be downloaded independently.
-1. Open a Julia console and do:
-   ```
-   julia> using Pkg
-   julia> Pkg.add("DrWatson") # install globally, for using `quickactivate`
-   julia> Pkg.activate("path/to/this/project")
-   julia> Pkg.instantiate()
-   ```
+This project requires:
+- [Julia](https://julialang.org/) (v1.10+)
+- [Python](https://www.python.org/) (v3.8+)
+- [uv](https://github.com/astral-sh/uv) - Ultra-fast Python package installer and resolver
 
-This will install all necessary packages for you to be able to run the scripts and
-everything should work out of the box, including correctly finding local paths.
-
-You may notice that most scripts start with the commands:
-```julia
-using DrWatson
-@quickactivate "EFEasVFE"
-```
-which auto-activate the project and enable local path handling from DrWatson.
 
 ## Experiments
 
-This project implements two main experiments:
+This project implements three main experiments:
 
 ### 1. Stochastic Maze
 
@@ -42,13 +23,13 @@ A grid-world environment with stochastic transitions and noisy observations. The
 - Multiple possible paths to the goal
 
 Run the experiment:
-```julia
-julia scripts/stochastic_maze.jl
+```bash
+make stochastic_maze
 ```
 
 Debug the stochastic maze environment:
-```julia
-julia scripts/debug_stochastic_maze.jl --save-frame --iterations 50
+```bash
+make debug_stochastic_maze
 ```
 
 ### 2. MiniGrid DoorKey
@@ -64,22 +45,33 @@ The environment features:
 - State-dependent transitions
 - Complex goal structure
 
-To run this experiment, you need to:
+To run this experiment:
 
-1. Start the Python FastAPI server:
 ```bash
-cd src/environments
-uvicorn minigrid_environment:app --reload
-```
-
-2. In a separate terminal, run the Julia experiment:
-```julia
-julia scripts/minigrid.jl
+# Start the Python FastAPI server and run the experiment
+make minigrid
 ```
 
 Debug the minigrid environment:
-```julia
-julia scripts/debug_minigrid.jl --grid-size 4 --time-horizon 25 --save-frame --iterations 40 --save-animation
+```bash
+make debug_minigrid
+```
+
+### 3. T-Maze
+
+A T-shaped maze environment where the agent must:
+- Navigate through a T-shaped corridor
+- Make decisions at the junction based on reward observations
+- Reach the correct goal state
+
+Run the experiment:
+```bash
+julia scripts/tmaze_experiments.jl
+```
+
+Parameters can be customized:
+```bash
+julia scripts/tmaze_experiments.jl --time-horizon 6 --n-episodes 50 --n-iterations 20 --record-episode --save-results
 ```
 
 ### Running Experiments with Make
@@ -108,16 +100,85 @@ make help
 
 The Makefile automatically detects the number of available CPU cores and configures Julia to use an appropriate number of threads.
 
+### Running Experiments with Shell Script
+
+You can also use the run_experiments.sh script directly:
+
+```bash
+# Start the API server
+./run_experiments.sh start_api
+
+# Run specific experiments
+./run_experiments.sh minigrid [threads] [parameters]
+./run_experiments.sh debug_minigrid [threads] [parameters]
+./run_experiments.sh stochastic_maze [threads] [parameters]
+./run_experiments.sh debug_stochastic_maze [threads] [parameters]
+
+# Stop the API server
+./run_experiments.sh stop_api
+```
+
+### Experiment Parameters
+
+Each experiment supports various command-line parameters:
+
+#### MiniGrid Parameters
+```
+--grid-size         Grid size for the environment (default: 3)
+--time-horizon      Maximum steps per episode (default: 15)
+--n-episodes        Number of episodes to run (default: 10)
+--n-iterations      Iterations per step (default: 70)
+--wait-time         Time to wait between steps (default: 0.0)
+--number-type       Number type to use (default: Float32)
+--visualize         Enable visualization
+--save-results      Save experiment results
+--verbosity         Logging level (debug, info, warn)
+--seed              Random seed
+--experiment-name   Custom name for the experiment
+--save-video        Save video of the last episode
+--sparse-tensor     Use sparse tensor representation
+--parallel          Enable parallel execution
+```
+
+#### Stochastic Maze Parameters
+```
+--time-horizon      Maximum steps per episode (default: 10)
+--n-episodes        Number of episodes to run (default: 100)
+--n-iterations      Iterations per step (default: 40)
+--wait-time         Time to wait between steps (default: 0.0)
+--seed              Random seed
+--record-episode    Record episode frames
+--experiment-name   Custom name for the experiment
+--tikz              Use PGFPlotsX backend for visualizations
+--debug             Enable debug mode
+--save-results      Save experiment results
+--show-legend       Show legend in visualizations
+```
+
+#### T-Maze Parameters
+```
+--time-horizon      Maximum steps per episode (default: 6)
+--n-episodes        Number of episodes to run (default: 50)
+--n-iterations      Iterations per step (default: 20)
+--wait-time         Time to wait between steps (default: 0.0)
+--seed              Random seed
+--record-episode    Record episode frames
+--experiment-name   Custom name for the experiment
+--tikz              Use PGFPlotsX backend for visualizations
+--debug             Enable debug mode
+--save-results      Save experiment results
+```
+
 ### Visualization
 
-Both environments include comprehensive visualization tools:
+All environments include comprehensive visualization tools:
 
 - **Belief visualization**: Visualize agent beliefs about states, actions, and free energy
 - **Animation**: Create animations of belief evolution over time
 - **TikZ export**: Save plots in both PNG and TikZ formats for publication-quality figures
 
 Example visualization options:
-```julia
+```bash
 # For Minigrid
 julia scripts/debug_minigrid.jl --save-animation
 
@@ -130,39 +191,38 @@ julia scripts/debug_stochastic_maze.jl --save-frame
 This project supports both Julia and Python implementations. The Python infrastructure is organized as follows:
 
 ### Directory Structure
-- `src/python/`: Python module containing shared code
-  - `environments/`: Environment implementations
-  - `models/`: Agent and model implementations
-- `scripts/python/`: Python experiment scripts
-- `requirements.txt`: Python dependencies
+- `src/environments/`: Environment implementations including the minigrid FastAPI server
+- `pyproject.toml`: Python dependencies configuration
 
 ### Getting Started with Python
 
-1. Create a virtual environment:
+1. Create a Python environment using uv:
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Unix/macOS
+uv venv .venv
+source .venv/bin/activate  # On Unix/macOS
 # or
-.\venv\Scripts\activate  # On Windows
+.\.venv\Scripts\activate  # On Windows
 ```
 
 2. Install dependencies:
 ```bash
-pip install -r requirements.txt
+uv pip install -e .
 ```
 
-3. Run experiments:
+3. Run the minigrid environment server:
 ```bash
-python scripts/python/stochastic_maze.py
+cd src/environments
+uv run -m uvicorn minigrid_environment:app --reload
 ```
 
-### Development
+### Python Dependencies
 
-The Python codebase follows these conventions:
-- Use Python 3.8+
-- Format code with `black`
-- Use type hints where possible
-- Follow the same experiment structure as Julia implementations
+The project depends on the following Python packages:
+- fastapi
+- gymnasium
+- minigrid
+- pydantic
+- uvicorn
 
 ## Project Structure
 
@@ -170,33 +230,40 @@ The project is organized as follows:
 
 ```
 .
-├── src/
-│   ├── environments/     # Environment implementations
-│   │   ├── minigrid.jl  # MiniGrid environment in Julia
-│   │   └── stochastic_maze.jl
-│   └── models/          # Agent and model implementations
-│       └── minigrid/    # MiniGrid-specific models
 ├── scripts/
-│   ├── minigrid.jl      # MiniGrid experiments
-│   └── stochastic_maze.jl
-└── src/python/          # Python implementations
-    └── environments/
-        └── minigrid_environment.py  # FastAPI server for MiniGrid
+│   ├── minigrid.jl              # MiniGrid experiment
+│   ├── debug_minigrid.jl        # Debug version of MiniGrid experiment
+│   ├── stochastic_maze.jl       # Stochastic Maze experiment
+│   ├── debug_stochastic_maze.jl # Debug version of Stochastic Maze experiment
+│   └── tmaze_experiments.jl     # T-Maze experiment
+├── src/
+│   ├── environments/            # Environment implementations
+│   │   └── minigrid_environment.py  # FastAPI server for MiniGrid
+│   └── models/                  # Agent and model implementations
+├── Makefile                     # Targets for running experiments
+├── run_experiments.sh           # Helper script for running experiments
+└── pyproject.toml               # Python dependencies
 ```
 
 ## Dependencies
 
 ### Julia
 - DrWatson
+- RxInfer
 - ReactiveMP
 - HTTP
 - JSON
 - ProgressMeter
-- RxEnvironmentsZoo.GLMakie (for visualization)
+- Plots
+- PGFPlotsX
+- StableRNGs
+- Distributions
+- ArgParse
+- And various other packages as specified in the Project.toml file
 
 ### Python
+- fastapi
 - gymnasium
 - minigrid
-- fastapi
 - pydantic
-- uvicorn (for FastAPI server)
+- uvicorn

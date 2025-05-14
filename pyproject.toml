@@ -1,9 +1,13 @@
 [project]
 name = "efeasvfe"
 version = "0.1.0"
-description = "Add your description here"
+description = "EFE as VFE experimental framework"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.8"
 dependencies = [
-    "sparse>=0.15.5",
+    "fastapi>=0.115.12",
+    "gymnasium>=1.1.1",
+    "minigrid>=3.0.0",
+    "pydantic>=2.11.4",
+    "uvicorn>=0.34.2",
 ]

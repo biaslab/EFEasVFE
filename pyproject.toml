@@ -3,7 +3,7 @@ name = "efeasvfe"
 version = "0.1.0"
 description = "EFE as VFE experimental framework"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 dependencies = [
     "fastapi>=0.115.12",
     "gymnasium>=1.1.1",

@@ -437,6 +437,14 @@ function finalize_stats!(stats::MinigridEpisodeStats)
     end
 end
 
+function convert_to_tensor(obs)
+    result = zeros(UInt8, 7, 7, 3)
+    for x in 1:7, y in 1:7, z in 1:3
+        result[x, y, z] = UInt8(obs[x][y][z])
+    end
+    return result
+end
+
 """
     run_single_episode(model, tensors, config, goal, callbacks, seed; 
                         constraints_fn=klcontrol_minigrid_agent_constraints,
@@ -501,7 +509,10 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
         env_state = execute_initial_action(config.grid_size, session_id)
         action = 1
         previous_result = nothing
-
+        obs = env_state["observation"]["image"]
+        dir = datadir("minigrid", "images", "episode_$(seed)")
+        mkpath(dir)
+        npzwrite(joinpath(dir, "0.npz"), convert_to_tensor(obs))
         # Update statistics for initial state
         update_stats!(stats, env_state, 0)
 
@@ -527,6 +538,8 @@ function run_single_episode(model, tensors, config, goal, callbacks, seed;
                 inference_kwargs...  # Forward any additional inference arguments
             )
 
+            obs = env_state["observation"]["image"]
+            npzwrite(datadir("minigrid", "images", "episode_$(seed)", "$(current_timestep).npz"), convert_to_tensor(obs))
             # Update statistics with new state
             update_stats!(stats, env_state, current_timestep)
 

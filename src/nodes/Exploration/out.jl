@@ -29,6 +29,5 @@ end
 @rule Exploration(:out, Marginalisation) (q_in::Any, meta::JointMarginalMeta,) = begin
     entropies = mapreduce(conditional_entropy, +, meta.components)
     softmax!(entropies, entropies)
-    # @show "Exploration message: $entropies"
     return Categorical(entropies)
 end

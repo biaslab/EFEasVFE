@@ -186,24 +186,24 @@ function run_experiment(config::ExperimentConfig)
         parallel=config.parallel            # Explicitly set parallel execution
     )
 
-    @info "Running EFE agent"
-    efe_stats = run_minigrid_agent(
-        efe_minigrid_agent,
-        tensors,
-        agent_config,
-        goal,
-        constraints_fn=efe_minigrid_agent_constraints,
-        initialization_fn=efe_minigrid_agent_initialization;
-        parallel=config.parallel,            # Explicitly set parallel execution
-        options=(force_marginal_computation=true,
-            limit_stack_depth=500), # Force marginal computation
-    )
+    # @info "Running EFE agent"
+    # efe_stats = run_minigrid_agent(
+    #     efe_minigrid_agent,
+    #     tensors,
+    #     agent_config,
+    #     goal,
+    #     constraints_fn=efe_minigrid_agent_constraints,
+    #     initialization_fn=efe_minigrid_agent_initialization;
+    #     parallel=config.parallel,            # Explicitly set parallel execution
+    #     options=(force_marginal_computation=true,
+    #         limit_stack_depth=500), # Force marginal computation
+    # )
 
     # Log detailed statistics
     @info "KL Control agent results" mean_reward = kl_stats.mean_reward std_reward = kl_stats.std_reward success_rate = kl_stats.success_rate mean_key_visible_time = kl_stats.mean_key_visible_time mean_door_visible_time = kl_stats.mean_door_visible_time key_never_visible = kl_stats.key_never_visible key_visible_at_start = kl_stats.key_visible_at_start door_never_visible = kl_stats.door_never_visible door_visible_at_start = kl_stats.door_visible_at_start
 
-    @info "EFE agent results" mean_reward = efe_stats.mean_reward std_reward = efe_stats.std_reward success_rate = efe_stats.success_rate mean_key_visible_time = efe_stats.mean_key_visible_time mean_door_visible_time = efe_stats.mean_door_visible_time key_never_visible = efe_stats.key_never_visible key_visible_at_start = efe_stats.key_visible_at_start door_never_visible = efe_stats.door_never_visible door_visible_at_start = efe_stats.door_visible_at_start
-
+    # @info "EFE agent results" mean_reward = efe_stats.mean_reward std_reward = efe_stats.std_reward success_rate = efe_stats.success_rate mean_key_visible_time = efe_stats.mean_key_visible_time mean_door_visible_time = efe_stats.mean_door_visible_time key_never_visible = efe_stats.key_never_visible key_visible_at_start = efe_stats.key_visible_at_start door_never_visible = efe_stats.door_never_visible door_visible_at_start = efe_stats.door_visible_at_start
+    efe_stats = kl_stats
     @info "Experiment completed"
 
     # Save results if requested

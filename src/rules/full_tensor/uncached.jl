@@ -147,14 +147,16 @@ end
     T1_idx = findfirst(isone, probvec(q_T1))
     veloga = view(eloga, out_idx, :, T1_idx, :, :, :)
     @tullio result[b, d, e, f] := veloga[b, d, e, f] * probvec(m_in)[b] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
-    return Contingency(result)
+    normalize!(result, 1)
+    return Contingency(result, Val(false))
 end
 
 # Rules for observation model (q_out is pointmass)
 @marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     @tullio result[a, b, c, d, e, f] := eloga[a, b, c, d, e, f] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
-    return Contingency(result)
+    normalize!(result, 1)
+    return Contingency(result, Val(false))
 end
 
 
@@ -162,21 +164,24 @@ end
 @marginalrule DiscreteTransition(:in_T1_T2_T3_T4) (q_out::PointMass, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     @tullio result[b, c, d, e, f] := eloga[a, b, c, d, e, f] * probvec(q_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
-    return Contingency(result)
+    normalize!(result, 1)
+    return Contingency(result, Val(false))
 end
 
 # Rules for transition model (7 interfaces)
 @marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4_T5) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, m_T5::Categorical, q_a::PointMass{<:AbstractArray{T,7}}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     @tullio result[a, b, c, d, e, f, g] := eloga[a, b, c, d, e, f, g] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f] * probvec(m_T5)[g]
-    return Contingency(result)
+    normalize!(result, 1)
+    return Contingency(result, Val(false))
 end
 
 # Rules for transition model 
 @marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,7}}, q_T5::PointMass{<:AbstractVector}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     @tullio result[a, b, c, d, e, f] := eloga[a, b, c, d, e, f, g] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f] * probvec(q_T5)[g]
-    return Contingency(result)
+    normalize!(result, 1)
+    return Contingency(result, Val(false))
 end
 
 # Rules for observation model for future observations (m_out is categorical)
@@ -249,7 +254,8 @@ end
 @marginalrule DiscreteTransition(:out_in_T1) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, q_a::PointMass{<:AbstractArray{T,3}}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     @tullio result[a, b, c] := eloga[a, b, c] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c]
-    return Contingency(result)
+    normalize!(result, 1)
+    return Contingency(result, Val(false))
 end
 
 

@@ -146,6 +146,33 @@ function get_initialization(initialization_fn, beliefs, previous_result)
     return initialization_fn(current_location_belief, current_orientation_belief, current_key_door_state_belief, future_location_beliefs, future_orientation_beliefs, future_key_door_state_beliefs, door_location_belief, key_location_belief)
 end
 
+function minigrid_state_update!(beliefs, tensors, fov_observation, orientation_observation, previous_action, number_type)
+    result = infer(model=minigrid_state_update(
+            p_old_location=beliefs.location,
+            p_old_orientation=beliefs.orientation,
+            p_old_key_door_state=beliefs.key_door_state,
+            p_door_location=beliefs.door_location,
+            p_key_location=beliefs.key_location,
+            location_transition_tensor=tensors.location,
+            orientation_transition_tensor=tensors.orientation,
+            key_door_transition_tensor=tensors.door_key,
+            observation_tensors=tensors.observation,
+            number_type=number_type
+        ),
+        data=(previous_action=previous_action,
+            fov_observation=fov_observation,
+            orientation_observation=orientation_observation,),
+        initialization=minigrid_state_update_initialization(beliefs.location, beliefs.orientation, beliefs.key_door_state, beliefs.door_location, beliefs.key_location),
+        iterations=50)
+
+    # Update beliefs
+    beliefs.location = last(result.posteriors[:current_location])
+    beliefs.orientation = last(result.posteriors[:current_orientation])
+    beliefs.key_door_state = last(result.posteriors[:current_key_door_state])
+    beliefs.key_location = last(result.posteriors[:key_location])
+    beliefs.door_location = last(result.posteriors[:door_location])
+end
+
 """
     execute_step(env_state, executed_action, beliefs, model, tensors, config, goal, callbacks, time_remaining, session_id::String; 
                 constraints_fn=klcontrol_minigrid_agent_constraints, 
@@ -187,15 +214,15 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     previous_action = zeros(config.number_type, 5)
     previous_action[executed_action] = one(config.number_type)
 
+    minigrid_state_update!(beliefs, tensors, obs_tensor, orientation, previous_action, config.number_type)
     # Run inference with additional kwargs
     result = infer(
         model=model(
-            p_old_location=beliefs.location,
-            p_old_orientation=beliefs.orientation,
+            p_location=beliefs.location,
+            p_orientation=beliefs.orientation,
             p_key_location=beliefs.key_location,
             p_door_location=beliefs.door_location,
-            p_old_key_door_state=beliefs.key_door_state,
-            location_transition_tensor=tensors.location,
+            p_key_door_state=beliefs.key_door_state,
             orientation_transition_tensor=tensors.orientation,
             key_door_transition_tensor=tensors.door_key,
             observation_tensors=tensors.observation,
@@ -204,9 +231,7 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
             number_type=config.number_type
         ),
         data=(
-            observations=obs_tensor,
-            action=previous_action,
-            orientation_observation=orientation
+            location_transition_tensor=tensors.location,
         ),
         constraints=constraints_fn(),
         callbacks=callbacks,
@@ -220,13 +245,6 @@ function execute_step(env_state, executed_action, beliefs, model, tensors, confi
     @debug "Executing action: $next_action with environment encoding $env_action"
     env_state = step_environment(env_action, session_id)
     @debug "Received reward: $(env_state["reward"])"
-
-    # Update beliefs
-    beliefs.location = last(result.posteriors[:current_location])
-    beliefs.orientation = last(result.posteriors[:current_orientation])
-    beliefs.key_door_state = last(result.posteriors[:current_key_door_state])
-    beliefs.key_location = last(result.posteriors[:key_location])
-    beliefs.door_location = last(result.posteriors[:door_location])
 
     return next_action, env_state, result  # Return the inference result as well
 end
@@ -721,4 +739,14 @@ function run_minigrid_agent(
         door_visible_at_start=door_visible_at_start,
         episode_stats=all_stats
     )
+end
+
+function compute_conditional_entropy(p1, p2, p3, C)
+    p1 = normalize!(p1, 1)
+    p2 = normalize!(p2, 1)
+    p3 = normalize!(p3, 1)
+    C = normalize!(C, 1)
+    marginal = @call_marginalrule DiscreteTransition(:out_in_T1) (m_out=Categorical(p1), m_in=Categorical(p2), m_T1=Categorical(p3), q_a=PointMass(C))
+    m = components(marginal)
+    return EFEasVFE.conditional_entropy(m, 1, 2, (1, 3))
 end

@@ -4,27 +4,16 @@ using Tullio
 import RxInfer: Categorical
 
 
-@model function klcontrol_minigrid_agent(p_old_location, p_old_orientation, p_key_location, p_door_location,
-    p_old_key_door_state, location_transition_tensor, orientation_transition_tensor, key_door_transition_tensor,
-    observation_tensors, T, goal, observations, action, orientation_observation, number_type)
+@model function klcontrol_minigrid_agent(p_location, p_orientation, p_key_door_state, p_key_location, p_door_location,
+    location_transition_tensor, orientation_transition_tensor, key_door_transition_tensor,
+    observation_tensors, T, goal, number_type)
     # Prior initialization
-    old_location ~ p_old_location
-    old_orientation ~ p_old_orientation
-    old_key_door_state ~ p_old_key_door_state
+    current_location ~ p_location
+    current_orientation ~ p_orientation
+    current_key_door_state ~ p_key_door_state
 
     door_location ~ p_door_location
     key_location ~ p_key_location
-
-    # State inference
-    current_location ~ DiscreteTransition(old_location, location_transition_tensor, old_orientation, key_location, door_location, old_key_door_state, action)
-    current_key_door_state ~ DiscreteTransition(old_key_door_state, key_door_transition_tensor, old_location, old_orientation, key_location, door_location, action)
-
-    # Observation model with Parafac decomposed tensors
-    for x in 1:7, y in 1:7
-        decomposed_tensor = observation_tensors[x, y]
-        observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, orientation_observation, key_location, door_location, current_key_door_state)
-    end
-    current_orientation ~ DiscreteTransition(orientation_observation, diageye(number_type, 4))
 
     # Planning (Active Inference)
     previous_location = current_location
@@ -63,8 +52,4 @@ RxInfer.GraphPPL.default_constraints(::typeof(klcontrol_minigrid_agent)) = klcon
     μ(key_door_state) = p_future_key_door_states
     μ(door_location) = p_door_location
     μ(key_location) = p_key_location
-
-    μ(old_location) = p_current_location
-    μ(old_orientation) = p_current_orientation
-    μ(old_key_door_state) = p_current_key_door_state
 end

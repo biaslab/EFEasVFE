@@ -1,4 +1,4 @@
-using Tullio, LoopVectorization
+using Tullio
 # relu(x) = max(x, tiny)
 guard(x) = all(iszero(x)) ? x .+ 1.0 : x
 # Rules for observation model (q_out is pointmass)
@@ -41,6 +41,44 @@ end
     @tullio out[i] := veloga[b, d, e, i] * probvec(m_in)[b] * probvec(m_T2)[d] * probvec(m_T3)[e]
     return Categorical(normalize!(guard(out), 1); check_args=false)
 end
+
+# # Rules for future observation model (full BP)
+
+# @rule DiscreteTransition(:out, Marginalisation) (m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+#     eloga = mean(q_a)
+#     @tullio out[i] := eloga[i, a, c, d, e, f] * probvec(m_in)[a] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
+#     return Categorical(normalize!(guard(out), 1); check_args=false)
+# end
+
+# @rule DiscreteTransition(:in, Marginalisation) (m_out::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+#     eloga = mean(q_a)
+#     @tullio out[i] := eloga[a, i, c, d, e, f] * probvec(m_out)[a] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
+#     return Categorical(normalize!(guard(out), 1); check_args=false)
+# end
+
+# @rule DiscreteTransition(:T1, Marginalisation) (m_out::Categorical, m_in::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+#     eloga = mean(q_a)
+#     @tullio out[i] := eloga[a, b, i, d, e, f] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T2)[d] * probvec(m_T3)[e] * probvec(m_T4)[f]
+#     return Categorical(normalize!(guard(out), 1); check_args=false)
+# end
+
+# @rule DiscreteTransition(:T2, Marginalisation) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+#     eloga = mean(q_a)
+#     @tullio out[i] := eloga[a, b, c, i, e, f] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T3)[e] * probvec(m_T4)[f]
+#     return Categorical(normalize!(guard(out), 1); check_args=false)
+# end
+
+# @rule DiscreteTransition(:T3, Marginalisation) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+#     eloga = mean(q_a)
+#     @tullio out[i] := eloga[a, b, c, d, i, f] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T4)[f]
+#     return Categorical(normalize!(guard(out), 1); check_args=false)
+# end
+
+# @rule DiscreteTransition(:T4, Marginalisation) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
+#     eloga = mean(q_a)
+#     @tullio out[i] := eloga[a, b, c, d, e, i] * probvec(m_out)[a] * probvec(m_in)[b] * probvec(m_T1)[c] * probvec(m_T2)[d] * probvec(m_T3)[e]
+#     return Categorical(normalize!(guard(out), 1); check_args=false)
+# end
 
 # Rules for transition model (7 interfaces)
 @rule DiscreteTransition(:out, Marginalisation) (m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, m_T5::Categorical, q_a::PointMass{<:AbstractArray{T,7}}, meta::Any) where {T} = begin
@@ -185,7 +223,7 @@ end
 end
 
 # Rules for observation model for future observations (m_out is categorical)
-@rule DiscreteTransition(:out, Marginalisation) (m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,7}}, meta::Any) where {T} = begin
+@rule DiscreteTransition(:out, Marginalisation) (m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     size_result = size(eloga)[1]
     return Categorical(fill(T(1 / size_result), size_result); check_args=false)
@@ -231,9 +269,8 @@ end
 end
 
 @marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::JointMarginalStorage) where {T} = begin
-    marginal = @call_marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out=m_out, m_in=m_in, m_T1=m_T1, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, q_a=q_a, meta=nothing)
-    set_marginal!(meta, marginal)
-    return marginal
+
+    return get_marginal(meta)
 end
 
 # Rules for transition model (7 interfaces)

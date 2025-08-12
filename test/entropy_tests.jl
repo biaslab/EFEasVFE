@@ -5,7 +5,7 @@
         import EFEasVFE: conditional_entropy
         d = Contingency(rand(5, 5, 5))
         mat = components(d)
-        @test size(conditional_entropy(mat, 1, 2)) == (5,)
+        @test size(conditional_entropy(mat, 1, 2, (2, 3))) == (5,)
     end
 
     @testset "3D distribution - independent case" begin
@@ -29,7 +29,7 @@
         expected = fill(h_y, nz)
 
         # Test H(Y|X,Z=z)
-        h_y_given_xz = conditional_entropy(joint_3d, 2, 3)
+        h_y_given_xz = conditional_entropy(joint_3d, 2, 3, (1, 2))
 
         @test size(h_y_given_xz) == (nz,)
         @test all(isapprox.(h_y_given_xz, expected, atol=1e-6))
@@ -57,7 +57,7 @@
         expected = zeros(nz)
 
         # Test H(Y|X,Z=z)
-        h_y_given_xz = conditional_entropy(joint_3d, 2, 3)
+        h_y_given_xz = conditional_entropy(joint_3d, 2, 3, (1, 2))
 
         @test size(h_y_given_xz) == (nz,)
         @test all(isapprox.(h_y_given_xz, expected, atol=1e-6))
@@ -120,7 +120,7 @@
         end
 
         # Test H(Y|X,Z=z)
-        h_y_given_xz = conditional_entropy(joint_3d, 2, 3)
+        h_y_given_xz = conditional_entropy(joint_3d, 2, 3, (1, 2))
 
         @test size(h_y_given_xz) == (nz,)
         @test all(isapprox.(h_y_given_xz, expected, atol=1e-6))
@@ -136,15 +136,15 @@
 
         # Test different combinations of out_dim and in_dim
         # H(X|Y,Z=z)
-        h_x_given_yz = conditional_entropy(joint_3d, 1, 3)
+        h_x_given_yz = conditional_entropy(joint_3d, 1, 3, (1, 2))
         @test size(h_x_given_yz) == (nz,)
 
         # H(Y|X,Z=z)
-        h_y_given_xz = conditional_entropy(joint_3d, 2, 3)
+        h_y_given_xz = conditional_entropy(joint_3d, 2, 3, (1, 2))
         @test size(h_y_given_xz) == (nz,)
 
         # H(Z|X,Y=y)
-        h_z_given_xy = conditional_entropy(joint_3d, 3, 2)
+        h_z_given_xy = conditional_entropy(joint_3d, 3, 2, (1, 3))
         @test size(h_z_given_xy) == (ny,)
 
         # Manually calculate expected values for one case
@@ -182,11 +182,11 @@
         joint_4d ./= sum(joint_4d)
 
         # Test H(Y|X,Z,W=w)
-        h_y_given_xzw = conditional_entropy(joint_4d, 2, 4)
+        h_y_given_xzw = conditional_entropy(joint_4d, 2, 4, (1, 2, 3))
         @test size(h_y_given_xzw) == (nw,)
 
         # Test H(X|Y,Z,W=w)
-        h_x_given_yzw = conditional_entropy(joint_4d, 1, 4)
+        h_x_given_yzw = conditional_entropy(joint_4d, 1, 4, (1, 2, 3))
         @test size(h_x_given_yzw) == (nw,)
 
         # Manually calculate expected value for one case
@@ -211,7 +211,6 @@
             # Calculate H(Y|X,Z,W=w) = sum_{x,z} p(x,z|w) * H(Y|X=x,Z=z,W=w)
             expected_h_y_given_xzw[w] = sum(p_xz_given_w .* h_y_given_xz_w)
         end
-
         @test all(isapprox.(h_y_given_xzw, expected_h_y_given_xzw, atol=1e-6))
     end
 
@@ -225,7 +224,7 @@
 
         # Measure time for calculating H(Y|X,Z=z)
         t_start = time()
-        h_y_given_xz = conditional_entropy(joint_3d, 2, 3)
+        h_y_given_xz = conditional_entropy(joint_3d, 2, 3, (1, 2))
         t_end = time()
 
         @test size(h_y_given_xz) == (nz,)
@@ -243,7 +242,7 @@
         expected = fill(log(ny), nz)
 
         # Test H(Y|X,Z=z)
-        h_y_given_xz = conditional_entropy(joint_3d, 2, 3)
+        h_y_given_xz = conditional_entropy(joint_3d, 2, 3, (1, 2))
 
         @test size(h_y_given_xz) == (nz,)
         @test all(isapprox.(h_y_given_xz, expected, atol=1e-6))
@@ -259,7 +258,7 @@
 
         # For this distribution, H(Y|X,Z=z) should be 0 for z=1, and undefined (NaN) for z>1
         # We'll just test z=1 since the others have zero probability
-        h_y_given_xz = conditional_entropy(joint_3d, 2, 3)
+        h_y_given_xz = conditional_entropy(joint_3d, 2, 3, (1, 2))
 
         @test size(h_y_given_xz) == (nz,)
         @test isapprox(h_y_given_xz[1], 0.0, atol=1e-6)
@@ -274,7 +273,7 @@
         joint_3d ./= sum(joint_3d)
 
         # Calculate H(Y|X,Z=z)
-        h_y_given_xz = conditional_entropy(joint_3d, 2, 3)
+        h_y_given_xz = conditional_entropy(joint_3d, 2, 3, (1, 2))
 
         @test size(h_y_given_xz) == (nz,)
         @test all(isfinite.(h_y_given_xz))  # Ensure no NaN or Inf values
@@ -294,11 +293,37 @@
         joint_3d_f64 = Float64.(joint_3d_f32)
 
         # Calculate H(Y|X,Z=z) for both types
-        h_y_given_xz_f32 = conditional_entropy(joint_3d_f32, 2, 3)
-        h_y_given_xz_f64 = conditional_entropy(joint_3d_f64, 2, 3)
+        h_y_given_xz_f32 = conditional_entropy(joint_3d_f32, 2, 3, (1, 2))
+        h_y_given_xz_f64 = conditional_entropy(joint_3d_f64, 2, 3, (1, 2))
 
         @test size(h_y_given_xz_f32) == (nz,)
         @test size(h_y_given_xz_f64) == (nz,)
         @test all(isapprox.(Float64.(h_y_given_xz_f32), h_y_given_xz_f64, atol=1e-5))
+    end
+
+
+    @testset "Test with higher dimensions" begin
+        import EFEasVFE: conditional_entropy
+
+        # Create a 4D joint distribution
+        nx, ny, nz, nw = 2, 3, 4, 2
+        joint_4d = [0.006354836457147019 0.037511088890774945 0.028901675381119485;
+            0.022886775889262127 0.03453367379750202 0.017169760727814235;;;
+            0.004900606280461121 0.027318188027149394 0.007985325182253306;
+            0.027831323446348814 0.03632816271112465 0.030793023958820623;;;
+            0.002610050762744996 0.006401050601900565 0.0298118241894719;
+            0.021138818473956322 0.024523285379930964 0.03502515354295789;;;
+            0.004163920634161192 0.009103234762321806 0.017419893431555766;
+            0.017107817118807853 0.001379731032706766 0.03744712509070246;;;;
+            0.03362775366058353 0.019257643366951863 0.024476937402844824;
+            0.01006918419974906 0.00482208688167144 0.01716199258248763;;;
+            0.0016104104402663245 0.031673657802025273 0.032561429561708356;
+            0.02608939544899924 0.018052064529539436 0.001098450033208814;;;
+            0.019403706143884106 0.03558143119810993 0.025270210449745457;
+            0.007359298597417115 0.031643000194480166 0.0201816988850343;;;
+            0.02068223050252763 0.033794779326611034 0.003802095666011729;
+            0.030036012351458318 0.028376711579187554 0.034721473424500826]
+        @test conditional_entropy(joint_4d, 1, 3, (1, 2, 4)) == [0.6210517226521002, 0.4896677878233473, 0.6262491664031042, 0.5816298989527566]
+
     end
 end

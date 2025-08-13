@@ -269,8 +269,9 @@ end
 end
 
 @marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out::Categorical, m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::JointMarginalStorage) where {T} = begin
-
-    return get_marginal(meta)
+    marginal = @call_marginalrule DiscreteTransition(:out_in_T1_T2_T3_T4) (m_out=m_out, m_in=m_in, m_T1=m_T1, m_T2=m_T2, m_T3=m_T3, m_T4=m_T4, q_a=q_a, meta=nothing)
+    set_marginal!(meta, marginal)
+    return marginal
 end
 
 # Rules for transition model (7 interfaces)

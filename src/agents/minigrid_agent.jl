@@ -163,7 +163,7 @@ function minigrid_state_update!(beliefs, tensors, fov_observation, orientation_o
             fov_observation=fov_observation,
             orientation_observation=orientation_observation,),
         initialization=minigrid_state_update_initialization(beliefs.location, beliefs.orientation, beliefs.key_door_state, beliefs.door_location, beliefs.key_location),
-        iterations=50)
+        iterations=20)
 
     # Update beliefs
     beliefs.location = last(result.posteriors[:current_location])

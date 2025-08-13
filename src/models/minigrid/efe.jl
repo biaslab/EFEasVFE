@@ -85,14 +85,14 @@ end
             key_door_state_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 6)
             push!(key_door_state_observation_marginalcomponents, key_door_state_observation_marginalcomponent)
             decomposed_tensor = observation_tensors[x, y]
-            future_observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, current_orientation, key_location, door_location, current_key_door_state) where {meta=marginalstorage}
-            future_observations[x, y] ~ Categorical(fill(number_type(1 / 5), 5))
+            # future_observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, current_orientation, key_location, door_location, current_key_door_state) where {meta=marginalstorage}
+            # future_observations[x, y] ~ Categorical(fill(number_type(1 / 5), 5))
         end
-        location[t] ~ Ambiguity(location_transition_tensor) where {meta=JointMarginalMeta(location_observation_marginalcomponents)}
-        orientation[t] ~ Ambiguity(location_transition_tensor) where {meta=JointMarginalMeta(orientation_observation_marginalcomponents)}
-        key_location ~ Ambiguity(location_transition_tensor) where {meta=JointMarginalMeta(key_location_observation_marginalcomponents)}
-        door_location ~ Ambiguity(location_transition_tensor) where {meta=JointMarginalMeta(door_location_observation_marginalcomponents)}
-        key_door_state[t] ~ Ambiguity(location_transition_tensor) where {meta=JointMarginalMeta(key_door_state_observation_marginalcomponents)}
+        location[t] ~ Ambiguity(T) where {meta=JointMarginalMeta(location_observation_marginalcomponents)}
+        orientation[t] ~ Ambiguity(T) where {meta=JointMarginalMeta(orientation_observation_marginalcomponents)}
+        # key_location ~ Ambiguity(location_transition_tensor) where {meta=JointMarginalMeta(key_location_observation_marginalcomponents)}
+        # door_location ~ Ambiguity(location_transition_tensor) where {meta=JointMarginalMeta(door_location_observation_marginalcomponents)}
+        key_door_state[t] ~ Ambiguity(T) where {meta=JointMarginalMeta(key_door_state_observation_marginalcomponents)}
     end
     location[end] ~ goal
     orientation[end] ~ Categorical(fill(number_type(1 / 4), 4))

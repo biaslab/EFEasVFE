@@ -185,7 +185,7 @@ end
 end
 
 # Rules for observation model for future observations (m_out is categorical)
-@rule DiscreteTransition(:out, Marginalisation) (m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,7}}, meta::Any) where {T} = begin
+@rule DiscreteTransition(:out, Marginalisation) (m_in::Categorical, m_T1::Categorical, m_T2::Categorical, m_T3::Categorical, m_T4::Categorical, q_a::PointMass{<:AbstractArray{T,6}}, meta::Any) where {T} = begin
     eloga = mean(q_a)
     size_result = size(eloga)[1]
     return Categorical(fill(T(1 / size_result), size_result); check_args=false)

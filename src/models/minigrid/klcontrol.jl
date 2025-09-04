@@ -26,10 +26,14 @@ import RxInfer: Categorical
     end
     current_orientation ~ DiscreteTransition(orientation_observation, diageye(number_type, 4))
 
+    current_location_ow ~ OneWay(current_location)
+    current_orientation_ow ~ OneWay(current_orientation)
+    current_key_door_state_ow ~ OneWay(current_key_door_state)
+
     # Planning (Active Inference)
-    previous_location = current_location
-    previous_orientation = current_orientation
-    previous_key_door_state = current_key_door_state
+    previous_location = current_location_ow
+    previous_orientation = current_orientation_ow
+    previous_key_door_state = current_key_door_state_ow
     for t in 1:T
         u[t] ~ Categorical(fill(number_type(1 / 5), 5))
         location[t] ~ DiscreteTransition(previous_location, location_transition_tensor, previous_orientation, key_location, door_location, previous_key_door_state, u[t])
@@ -57,6 +61,10 @@ RxInfer.GraphPPL.default_constraints(::typeof(klcontrol_minigrid_agent)) = klcon
     μ(current_location) = p_current_location
     μ(current_orientation) = p_current_orientation
     μ(current_key_door_state) = p_current_key_door_state
+
+    μ(current_location_ow) = p_current_location
+    μ(current_orientation_ow) = p_current_orientation
+    μ(current_key_door_state_ow) = p_current_key_door_state
 
     μ(location) = p_future_locations
     μ(orientation) = p_future_orientations

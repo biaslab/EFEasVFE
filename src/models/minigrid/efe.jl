@@ -54,7 +54,7 @@ import RxInfer: Categorical
         key_door_state_observation_marginalcomponents = JointMarginalMetaComponent[]
 
         for x in 1:7, y in 1:7
-            marginalstorage = JointMarginalStorage(Contingency(ones(number_type, size(observation_tensors[x, y]))))
+            marginalstorage = JointMarginalStorage(Contingency(collect(observation_tensors[x, y])))
             location_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 2)
             push!(location_observation_marginalcomponents, location_observation_marginalcomponent)
             orientation_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 3)
@@ -66,14 +66,14 @@ import RxInfer: Categorical
             key_door_state_observation_marginalcomponent = JointMarginalMetaComponent(marginalstorage, 1, 6)
             push!(key_door_state_observation_marginalcomponents, key_door_state_observation_marginalcomponent)
             decomposed_tensor = observation_tensors[x, y]
-            future_observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, current_orientation, key_location, door_location, current_key_door_state) where {meta=marginalstorage}
-            future_observations[x, y] ~ Categorical(fill(number_type(1 / 5), 5))
+            # future_observations[x, y] ~ DiscreteTransition(current_location, decomposed_tensor, current_orientation, key_location, door_location, current_key_door_state) where {meta=marginalstorage}
+            # future_observations[x, y] ~ Categorical(fill(number_type(1 / 5), 5))
         end
-        location[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(location_observation_marginalcomponents)}
-        orientation[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(orientation_observation_marginalcomponents)}
-        key_location ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(key_location_observation_marginalcomponents)}
-        door_location ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(door_location_observation_marginalcomponents)}
-        key_door_state[t] ~ Ambiguity(observations[1, 1]) where {meta=JointMarginalMeta(key_door_state_observation_marginalcomponents)}
+        location[t] ~ Ambiguity(1) where {meta=JointMarginalMeta(location_observation_marginalcomponents)}
+        orientation[t] ~ Ambiguity(1) where {meta=JointMarginalMeta(orientation_observation_marginalcomponents)}
+        key_location ~ Ambiguity(1) where {meta=JointMarginalMeta(key_location_observation_marginalcomponents)}
+        door_location ~ Ambiguity(1) where {meta=JointMarginalMeta(door_location_observation_marginalcomponents)}
+        key_door_state[t] ~ Ambiguity(1) where {meta=JointMarginalMeta(key_door_state_observation_marginalcomponents)}
     end
     location[end] ~ goal
     orientation[end] ~ Categorical(fill(number_type(1 / 4), 4))

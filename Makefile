@@ -2,14 +2,14 @@
 
 # Detect number of CPU cores and use (cores - 2) for Julia threads, minimum 1
 NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-JULIA_THREADS := $(shell expr $(NPROC) - 2 || echo 1)
+JULIA_THREADS := $(shell expr $(NPROC) - 1 || echo 1)
 # Ensure minimum of 1 thread
 ifeq ($(shell expr $(JULIA_THREADS) \< 1), 1)
     JULIA_THREADS := 1
 endif
 
 # Define experiment parameters
-MINIGRID_PARAMS := --save-results --parallel --save-video --n-iterations 50 --n-episodes 10 --time-horizon 25 --grid-size 4
+MINIGRID_PARAMS := --save-results --parallel --save-video --n-iterations 50 --n-episodes 200 --time-horizon 25 --grid-size 4
 DEBUG_MINIGRID_PARAMS := --grid-size 4 --time-horizon 25 --save-frame --iterations 40 --save-animation
 STOCHASTIC_MAZE_PARAMS := -r --save-results
 DEBUG_STOCHASTIC_MAZE_PARAMS := --save-frame --iterations 50

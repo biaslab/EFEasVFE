@@ -6,6 +6,14 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_PROCESS_FILE="/tmp/minigrid_api_pid"
 
+# Function to setup Julia environment (instantiate and precompile)
+setup_julia_environment() {
+    echo "Setting up Julia environment..."
+    cd "$SCRIPT_DIR"
+    julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+    echo "Julia environment setup complete."
+}
+
 # Function to run Julia scripts
 run_julia_script() {
     local script=$1
@@ -65,6 +73,9 @@ stop_api_server() {
 
 # Main execution logic
 case "$1" in
+    setup)
+        setup_julia_environment
+        ;;
     start_api)
         start_api_server
         ;;
@@ -89,6 +100,7 @@ case "$1" in
         ;;
     all)
         # Run all experiments
+        setup_julia_environment
         start_api_server
         run_julia_script "minigrid" "$2" "${3:-"--save-results --parallel --save-video --n-iterations 40 --n-episodes 200 --time-horizon 25 --grid-size 4"}"
         run_julia_script "debug_minigrid" "$2" "${4:-"--grid-size 4 --time-horizon 25 --save-frame --iterations 40 --save-animation"}"
@@ -96,7 +108,7 @@ case "$1" in
         run_julia_script "debug_stochastic_maze" "$2" "${6:-"--save-frame --iterations 50"}"
         ;;
     *)
-        echo "Usage: $0 {start_api|stop_api|minigrid|debug_minigrid|stochastic_maze|debug_stochastic_maze|all} [threads] [parameters]"
+        echo "Usage: $0 {setup|start_api|stop_api|minigrid|debug_minigrid|stochastic_maze|debug_stochastic_maze|all} [threads] [parameters]"
         exit 1
         ;;
 esac

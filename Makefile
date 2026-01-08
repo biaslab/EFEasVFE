@@ -1,4 +1,4 @@
-.PHONY: experiments minigrid debug_minigrid stochastic_maze debug_stochastic_maze clean start_api
+.PHONY: setup experiments minigrid debug_minigrid stochastic_maze debug_stochastic_maze clean start_api
 
 # Detect number of CPU cores and use (cores - 2) for Julia threads, minimum 1
 NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -17,8 +17,13 @@ DEBUG_STOCHASTIC_MAZE_PARAMS := --save-frame --iterations 50
 # Default target
 all: experiments
 
+# Setup Julia environment (instantiate and precompile)
+setup:
+	@echo "Setting up Julia environment..."
+	@./run_experiments.sh setup
+
 # Target to run all experiments
-experiments: start_api minigrid debug_minigrid stochastic_maze debug_stochastic_maze
+experiments: setup start_api minigrid debug_minigrid stochastic_maze debug_stochastic_maze
 
 # Start Minigrid API server
 start_api:
@@ -56,7 +61,8 @@ clean:
 help:
 	@echo "Available targets:"
 	@echo "  all            - Run all experiments (default)"
-	@echo "  experiments    - Run all experiments (alias for all)"
+	@echo "  setup          - Setup Julia environment (instantiate and precompile)"
+	@echo "  experiments    - Run all experiments (includes setup)"
 	@echo "  minigrid       - Run Minigrid experiments"
 	@echo "  debug_minigrid - Run Debug Minigrid experiments"
 	@echo "  stochastic_maze - Run Stochastic Maze experiments"

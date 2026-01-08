@@ -9,6 +9,27 @@ This project requires:
 - [Python](https://www.python.org/) (v3.8+)
 - [uv](https://github.com/astral-sh/uv) - Ultra-fast Python package installer and resolver
 
+## Installation
+
+### Julia Environment Setup
+
+Before running any experiments, you need to set up the Julia environment. This installs all dependencies from `Manifest.toml` and precompiles packages:
+
+```bash
+# Using Make
+make setup
+
+# Or using the shell script directly
+./run_experiments.sh setup
+```
+
+This runs `Pkg.instantiate()` and `Pkg.precompile()` to ensure all Julia dependencies are installed and compiled.
+
+> **Note:** The `make all` and `./run_experiments.sh all` commands automatically run setup before executing experiments.
+
+### Python Environment Setup
+
+For experiments that require the Python API server (e.g., MiniGrid), see the [Python Setup](#python-setup) section below.
 
 ## Experiments
 
@@ -79,7 +100,10 @@ julia scripts/tmaze_experiments.jl --time-horizon 6 --n-episodes 50 --n-iteratio
 For convenience, a Makefile is provided to run all experiments:
 
 ```bash
-# Run all experiments
+# Setup Julia environment (install and precompile dependencies)
+make setup
+
+# Run all experiments (automatically runs setup first)
 make all
 
 # Run specific experiments
@@ -105,6 +129,9 @@ The Makefile automatically detects the number of available CPU cores and configu
 You can also use the run_experiments.sh script directly:
 
 ```bash
+# Setup Julia environment (install and precompile dependencies)
+./run_experiments.sh setup
+
 # Start the API server
 ./run_experiments.sh start_api
 
@@ -113,6 +140,9 @@ You can also use the run_experiments.sh script directly:
 ./run_experiments.sh debug_minigrid [threads] [parameters]
 ./run_experiments.sh stochastic_maze [threads] [parameters]
 ./run_experiments.sh debug_stochastic_maze [threads] [parameters]
+
+# Run all experiments (automatically runs setup first)
+./run_experiments.sh all [threads]
 
 # Stop the API server
 ./run_experiments.sh stop_api

@@ -517,8 +517,6 @@ function next_position(env::TMaze, pos::Tuple{Int,Int}, action::MazeAction)
     elseif pos == (1, 3)
         if action.direction isa East
             return (2, 3)  # Move to top middle
-        elseif action.direction isa South
-            return (2, 2)  # Move to middle junction
         else
             return pos     # Stay in place for other directions (hitting walls)
         end
@@ -537,9 +535,7 @@ function next_position(env::TMaze, pos::Tuple{Int,Int}, action::MazeAction)
 
         # Top right (3,3)
     elseif pos == (3, 3)
-        if action.direction isa South
-            return (2, 2)  # Move to middle junction
-        elseif action.direction isa West
+        if action.direction isa West
             return (2, 3)  # Move to top middle
         else
             return pos     # Stay in place for other directions (hitting walls)
@@ -653,7 +649,7 @@ function create_location_transition_tensor()
     # Top left (state 3)
     transition_tensor[3, 3, 1] = 1.0  # North -> Stay (wall)
     transition_tensor[4, 3, 2] = 1.0  # East -> Top middle
-    transition_tensor[2, 3, 3] = 1.0  # South -> Middle junction
+    transition_tensor[3, 3, 3] = 1.0  # South -> Stay (wall)
     transition_tensor[3, 3, 4] = 1.0  # West -> Stay (wall)
 
     # Top middle (state 4)
@@ -665,7 +661,7 @@ function create_location_transition_tensor()
     # Top right (state 5)
     transition_tensor[5, 5, 1] = 1.0  # North -> Stay (wall)
     transition_tensor[5, 5, 2] = 1.0  # East -> Stay (wall)
-    transition_tensor[2, 5, 3] = 1.0  # South -> Middle junction
+    transition_tensor[5, 5, 3] = 1.0  # South -> Stay (wall)
     transition_tensor[4, 5, 4] = 1.0  # West -> Top middle
 
     return transition_tensor
